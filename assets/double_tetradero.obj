@@ -1,0 +1,22 @@
+# Dois tetraedros compartilhando a face (vértices 1, 2, 3)
+
+# Definição dos vértices (apenas 5 no total)
+v 0.0 0.0 0.0
+v 1.0 0.0 0.0
+v 0.0 1.0 0.0
+v 0.0 0.0 1.0
+v 1.0 1.0 1.0
+
+# Faces do primeiro tetraedro (tetraedro ABDC)
+# Possui 4 faces, sendo a face ABC a face compartilhada
+f 1 2 3
+f 1 2 4
+f 1 3 4
+f 2 3 4
+
+# Faces do segundo tetraedro (tetraedro ABCE)
+# Não re-declara a face compartilhada
+f 2 1 3
+f 1 2 5
+f 1 3 5
+f 2 3 5

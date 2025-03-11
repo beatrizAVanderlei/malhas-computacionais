@@ -1,0 +1,16 @@
+Quantidade de vértices: 25075
+Quantidade de faces: 22911
+
+=== Estatísticas para vértices ===
+Tempo para acessar faces: média=0.000000, min=0.000000, max=0.000013, stdev=0.000000
+Número de faces: média=3.65, min=0, max=12, stdev=0.77
+Tempo para acessar vizinhos: média=0.000150, min=0.000142, max=0.000898, stdev=0.000025
+Número de vizinhos: média=3.82, min=0, max=12, stdev=0.42
+
+=== Estatísticas para faces ===
+Tempo para acessar vértices: média=0.000000, min=0.000000, max=0.000024, stdev=0.000000
+Número de vértices: média=4.00, min=4, max=4, stdev=0.00
+Tempo para acessar vizinhos: média=0.000000, min=0.000000, max=0.000001, stdev=0.000000
+Número de vizinhos: média=3.81, min=2, max=4, stdev=0.39
+
+Tempo total de execução (do C++): 3.816530 segundos
