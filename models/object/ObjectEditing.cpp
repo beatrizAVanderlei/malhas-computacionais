@@ -19,7 +19,7 @@ namespace object {
         if (faceIndex < 0) return;
 
         if (faceColors.size() != faces_.size())
-            faceColors.resize(faces_.size(), Color{60.0f/255.0f, 60.0f/255.0f, 60.0f/255.0f});
+            faceColors.resize(faces_.size(), Color{0.8f, 0.8f, 0.8f});
 
         if (faceIndex >= 0 && faceIndex < static_cast<int>(faceColors.size())) {
             faceColors[faceIndex] = color;
@@ -42,7 +42,7 @@ namespace object {
 
     void Object::clearSelection() {
         for (int faceIndex : selectedFaces)
-            setFaceColor(faceIndex, Color{60.0f/255.0f, 60.0f/255.0f, 60.0f/255.0f});
+            setFaceColor(faceIndex, Color{0.8f, 0.8f, 0.8f});
 
         selectedFaces.clear();
 

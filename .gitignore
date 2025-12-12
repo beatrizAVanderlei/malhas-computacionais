@@ -1,0 +1,16 @@
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+*.cmake
+Makefile
+.idea/
+.vscode/
+*.swp
+venv/
+__pycache__/
+*.exe
+*.dll
+*.a
+*.lib
+*.pdb
+vcpkg_installed/

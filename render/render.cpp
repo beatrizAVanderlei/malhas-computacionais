@@ -20,7 +20,7 @@ namespace render {
                     const ColorsMap *colors) {
         ColorsMap default_colors;
         if (!colors) {
-            default_colors["surface"] = {1.0f, 0.0f, 0.0f};
+            default_colors["surface"] = {0.8f, 0.8f, 0.8f};
             default_colors["edge"]    = {19.0f / 255.0f, 19.0f / 255.0f, 19.0f / 255.0f};
             default_colors["vertex"]  = {19.0f / 255.0f, 19.0f / 255.0f, 19.0f / 255.0f};
             colors = &default_colors;

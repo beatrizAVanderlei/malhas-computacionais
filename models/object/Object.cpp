@@ -5,7 +5,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
-
+#include <iostream>
 #ifdef __APPLE__
 #include <GLUT/glut.h>
 #else
@@ -76,6 +76,36 @@ namespace object {
         if (vbo_vertices_ != 0) glDeleteBuffers(1, &vbo_vertices_);
         if (ibo_faces_ != 0) glDeleteBuffers(1, &ibo_faces_);
         if (ibo_edges_ != 0) glDeleteBuffers(1, &ibo_edges_);
+    }
+
+    void Object::updateConnectivity() {
+        // Recalcula os mapas baseados na geometria atual (faces_ e vertices_)
+        vertexToFacesMapping = computeVertexToFaces();
+        faceAdjacencyMapping = computeFaceAdjacency();
+    }
+
+    // Adicione esta função no final do arquivo ou junto com os métodos de seleção
+    void Object::selectFacesByGroup(int faceIndex) {
+        // Validação
+        if (faceIndex < 0 || faceIndex >= static_cast<int>(face_cells_.size())) return;
+
+        // Pega o ID do grupo da face clicada
+        unsigned int targetID = face_cells_[faceIndex];
+
+        // Se o ID for inválido (ex: -1 castado para unsigned int max), usamos um fallback ou retornamos
+        // Aqui assumimos que qualquer ID gravado é válido para agrupamento.
+
+        std::cout << "Selecionando grupo ID: " << targetID << std::endl;
+
+        // Varredura Linear O(N) - Muito rápida para memória contígua
+        for (size_t i = 0; i < face_cells_.size(); ++i) {
+            if (face_cells_[i] == targetID) {
+                // Evita duplicatas verificando se já está selecionado (opcional, mas bom para performance visual)
+                // Para simplicidade, apenas adicionamos e pintamos.
+                selectedFaces.push_back(static_cast<int>(i));
+                faceColors[i] = {1.0f, 0.0f, 0.0f}; // Vermelho
+            }
+        }
     }
 
     std::vector<std::vector<int>> Object::computeVertexToFaces() const {

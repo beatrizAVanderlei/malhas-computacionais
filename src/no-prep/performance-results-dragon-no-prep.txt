@@ -10,7 +10,7 @@ Número de vizinhos: média=4.21, min=0, max=50, stdev=5.33
 === Estatísticas para faces ===
 Tempo para acessar vértices: média=0.000000, min=0.000000, max=0.000082, stdev=0.000000
 Número de vértices: média=4.00, min=4, max=4, stdev=0.00
-Tempo para acessar vizinhos: média=0.104957, min=-6.482200, max=0.184255, stdev=0.010388
+Tempo para acessar vizinhos: média=0.104967, min=0.088447, max=0.184255, stdev=0.006210
 Número de vizinhos: média=15.73, min=4, max=26, stdev=4.09
 
 Tempo total de execução (do C++): 68291.600000 segundos

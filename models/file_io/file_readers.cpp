@@ -9,6 +9,7 @@
 #include <cctype>
 #include <stdexcept>
 #include <iostream>
+#include <map>
 
 namespace fileio {
 
@@ -61,31 +62,45 @@ MeshData read_file_obj(const std::string &filename) {
     std::ifstream infile(filename);
     if (!infile.is_open())
         throw std::runtime_error("Arquivo não encontrado: " + filename);
+
     std::string line;
-    int current_cell_id = 0;
+
+    // Mapa para gerenciar IDs de grupos/materiais
+    std::map<std::string, int> group_map;
+    int id_counter = 0;
+    int current_group_id = -1; // -1 significa "sem grupo definido"
+
     while (std::getline(infile, line)) {
-        if(line.empty() || line[0] == '#')
-            continue;
+        if(line.empty() || line[0] == '#') continue;
         auto tokens = string_utils::split(line);
-        if(tokens.empty())
-            continue;
-        if(tokens[0] == "o" || tokens[0] == "g") {
-            current_cell_id++;
-        } else if(tokens[0] == "v") {
-            if(tokens.size() < 4)
-                throw std::runtime_error("Vértice com coordenadas insuficientes no OBJ.");
-            std::array<double,3> vertex = { std::stod(tokens[1]), std::stod(tokens[2]), std::stod(tokens[3]) };
-            data.vertices.push_back(vertex);
-        } else if(tokens[0] == "f") {
+        if(tokens.empty()) continue;
+
+        // [CORREÇÃO] Detecta 'o' (object), 'g' (group) E 'usemtl' (material)
+        // A Cornell Box usa 'usemtl' para separar as partes.
+        if(tokens[0] == "o" || tokens[0] == "g" || tokens[0] == "usemtl") {
+            std::string name = (tokens.size() > 1) ? tokens[1] : "default";
+
+            // Se esse nome já apareceu antes, reusa o ID. Se não, cria um novo.
+            if (group_map.find(name) == group_map.end()) {
+                group_map[name] = id_counter++;
+            }
+            current_group_id = group_map[name];
+        }
+        else if(tokens[0] == "v") {
+            if(tokens.size() < 4) throw std::runtime_error("Vértice inválido.");
+            data.vertices.push_back({ std::stod(tokens[1]), std::stod(tokens[2]), std::stod(tokens[3]) });
+        }
+        else if(tokens[0] == "f") {
             std::vector<int> face;
             for (size_t i = 1; i < tokens.size(); ++i) {
                 size_t pos = tokens[i].find('/');
                 std::string indexStr = (pos != std::string::npos) ? tokens[i].substr(0, pos) : tokens[i];
-                int idx = std::stoi(indexStr) - 1; // OBJ é 1-indexado
-                face.push_back(idx);
+                face.push_back(std::stoi(indexStr) - 1);
             }
             data.faces.push_back(face);
-            data.faceCells.push_back(current_cell_id);
+
+            // Atribui a esta face o ID do grupo atual (ex: ID do "floor")
+            data.faceCells.push_back(current_group_id);
         }
     }
     return data;

@@ -17,14 +17,15 @@
 using Clock = std::chrono::high_resolution_clock;
 
 // ======================================================================
-// Estrutura de hash para std::pair<unsigned int, unsigned int>
+// Estrutura de hash
 // ======================================================================
 
+// A estrutura `PairHash` define um hash para pares de inteiros (usado para mapear arestas para faces adjacentes).
 struct PairHash {
-    std::size_t operator()(const std::pair<unsigned int, unsigned int>& p) const {
-        auto h1 = std::hash<unsigned int>{}(p.first);
-        auto h2 = std::hash<unsigned int>{}(p.second);
-        return h1 ^ (h2 << 1);
+    std::size_t operator()(const std::pair<unsigned int, unsigned int>& p) const {  // Sobrecarga do operador de hash.
+        auto h1 = std::hash<unsigned int>{}(p.first);  // Cria o hash do primeiro elemento do par.
+        auto h2 = std::hash<unsigned int>{}(p.second); // Cria o hash do segundo elemento do par.
+        return h1 ^ (h2 << 1);  // Combina os dois hashes em um único valor.
     }
 };
 
@@ -32,149 +33,150 @@ struct PairHash {
 // Funções de medição de vizinhança
 // ======================================================================
 
-// Retorna os índices das faces que contêm o vértice v_index.
+// Função que retorna as faces que contêm o vértice `v_index`.
 
 std::vector<int> getVertexFaces(const object::Object& obj, int v_index) {
-    std::vector<int> foundFaces;
-    const auto& faces = obj.getFaces();
-    foundFaces.reserve(faces.size());
-    for (int i = 0; i < static_cast<int>(faces.size()); ++i) {
-        const auto& face = faces[i];
-        if (std::find(face.begin(), face.end(), static_cast<unsigned int>(v_index)) != face.end()) {
-            foundFaces.push_back(i);
+    std::vector<int> foundFaces;  // Vetor para armazenar os índices das faces que contêm o vértice.
+    const auto& faces = obj.getFaces();  // Obtém as faces do objeto.
+    foundFaces.reserve(faces.size());  // Reserva espaço no vetor para melhorar a eficiência (otimização).
+
+    for (int i = 0; i < static_cast<int>(faces.size()); ++i) {  // Percorre todas as faces do objeto.
+        const auto& face = faces[i];  // Obtém a face atual.
+        if (std::find(face.begin(), face.end(), static_cast<unsigned int>(v_index)) != face.end()) {  // Verifica se o vértice está na face.
+            foundFaces.push_back(i);  // Se o vértice for encontrado, adiciona o índice da face ao vetor.
         }
     }
-    return foundFaces;
+    return foundFaces;  // Retorna o vetor com os índices das faces que contêm o vértice.
 }
 
-// Retorna os vértices adjacentes a v_index (utilizando as arestas).
+// Função que retorna os vértices adjacentes ao vértice `v_index` utilizando as arestas.
 
 std::vector<unsigned int> getVertexAdjacent(const object::Object& obj, int v_index) {
-    std::unordered_set<unsigned int> neighbors;
-    const auto& edges = obj.getEdges();
-    for (const auto& edge : edges) {
-        if (edge.first == static_cast<unsigned int>(v_index))
-            neighbors.insert(edge.second);
-        else if (edge.second == static_cast<unsigned int>(v_index))
-            neighbors.insert(edge.first);
+    std::unordered_set<unsigned int> neighbors;  // Conjunto para armazenar os vértices adjacentes (sem duplicatas).
+    const auto& edges = obj.getEdges();  // Obtém as arestas do objeto.
+
+    for (const auto& edge : edges) {  // Para cada aresta no conjunto de arestas do objeto:
+        if (edge.first == static_cast<unsigned int>(v_index))  // Se o vértice `v_index` for o primeiro vértice da aresta.
+            neighbors.insert(edge.second);  // Adiciona o segundo vértice da aresta como vizinho.
+        else if (edge.second == static_cast<unsigned int>(v_index))  // Se o vértice `v_index` for o segundo vértice da aresta.
+            neighbors.insert(edge.first);  // Adiciona o primeiro vértice da aresta como vizinho.
     }
-    return std::vector<unsigned int>(neighbors.begin(), neighbors.end());
+    return std::vector<unsigned int>(neighbors.begin(), neighbors.end());  // Retorna os vértices adjacentes como um vetor.
 }
 
 // ======================================================================
 // Mapeamentos pré-computados para otimizar o acesso
 // ======================================================================
 
-// Calcula o mapeamento de cada vértice para as faces às quais ele pertence.
+// Função que cria um mapeamento dos vértices para as faces às quais pertencem.
 
 std::vector<std::vector<int>> computeVertexToFaces(const object::Object& obj) {
-    const auto& faces = obj.getFaces();
-    int numVertices = obj.getVertices().size();
-    std::vector<std::vector<int>> mapping(numVertices);
-    for (int f = 0; f < static_cast<int>(faces.size()); ++f) {
-        for (unsigned int v : faces[f]) {
-            mapping[v].push_back(f);
+    const auto& faces = obj.getFaces();  // Obtém todas as faces do objeto.
+    int numVertices = obj.getVertices().size();  // Obtém o número total de vértices.
+    std::vector<std::vector<int>> mapping(numVertices);  // Vetor de vetores para armazenar o mapeamento (um vetor para cada vértice).
+
+    for (int f = 0; f < static_cast<int>(faces.size()); ++f) {  // Para cada face:
+        for (unsigned int v : faces[f]) {  // Para cada vértice em cada face:
+            mapping[v].push_back(f);  // Adiciona o índice da face ao mapeamento do vértice.
         }
     }
-    return mapping;
+    return mapping;  // Retorna o mapeamento de vértices para faces.
 }
 
-// Calcula o mapeamento de cada face para as faces adjacentes.
+// Função que calcula as faces adjacentes.
 // Utiliza um mapeamento de arestas para identificar rapidamente quais faces compartilham uma aresta.
 
 std::vector<std::vector<int>> computeFaceAdjacency(const object::Object& obj) {
-    const auto& faces = obj.getFaces();
-    int numFaces = faces.size();
-    std::vector<std::vector<int>> faceAdj(numFaces);
-    std::unordered_map<std::pair<unsigned int, unsigned int>, std::vector<int>, PairHash> edgeToFaces;
+    const auto& faces = obj.getFaces();  // Obtém todas as faces.
+    int numFaces = faces.size();  // Obtém o número total de faces.
+    std::vector<std::vector<int>> faceAdj(numFaces);  // Vetor de vetores para armazenar as faces adjacentes de cada face.
+    std::unordered_map<std::pair<unsigned int, unsigned int>, std::vector<int>, PairHash> edgeToFaces;  // Mapa de arestas para faces.
 
     // Para cada face, insira todas as arestas (ordenadas) no mapa.
     for (int f = 0; f < numFaces; ++f) {
         const auto& face = faces[f];
-        int n = face.size();
-        for (int i = 0; i < n; ++i) {
-            unsigned int a = face[i];
-            unsigned int b = face[(i+1) % n];
-            if (a > b) std::swap(a, b);
-            std::pair<unsigned int, unsigned int> edge = {a, b};
-            edgeToFaces[edge].push_back(f);
+        int n = face.size();  // Número de vértices na face.
+        for (int i = 0; i < n; ++i) {  // Para cada vértice da face:
+            unsigned int a = face[i];  // Primeiro vértice da aresta.
+            unsigned int b = face[(i+1) % n];  // Segundo vértice da aresta (circular para formar um ciclo).
+            if (a > b) std::swap(a, b);  // Garante que a aresta seja armazenada de forma ordenada.
+            std::pair<unsigned int, unsigned int> edge = {a, b};  // Cria o par de vértices representando a aresta.
+            edgeToFaces[edge].push_back(f);  // Adiciona a face ao mapeamento da aresta.
         }
     }
 
     // Para cada face, obtenha todas as faces que compartilham alguma aresta.
     for (int f = 0; f < numFaces; ++f) {
-        std::unordered_set<int> adjSet;
+        std::unordered_set<int> adjSet;  // Conjunto para armazenar as faces adjacentes.
         const auto& face = faces[f];
         int n = face.size();
-        for (int i = 0; i < n; ++i) {
+        for (int i = 0; i < n; ++i) {  // Para cada aresta da face:
             unsigned int a = face[i];
             unsigned int b = face[(i+1) % n];
-            if (a > b) std::swap(a, b);
-            std::pair<unsigned int, unsigned int> edge = {a, b};
-            const auto& faceList = edgeToFaces[edge];
-            for (int other : faceList) {
-                if (other != f) {
-                    adjSet.insert(other);
+            if (a > b) std::swap(a, b);  // Garante que a aresta seja ordenada.
+            std::pair<unsigned int, unsigned int> edge = {a, b};  // Cria o par da aresta.
+            const auto& faceList = edgeToFaces[edge];  // Obtém as faces que compartilham a aresta.
+            for (int other : faceList) {  // Para cada face que compartilha a aresta:
+                if (other != f) {  // Ignora a face atual.
+                    adjSet.insert(other);  // Adiciona a face adjacente ao conjunto.
                 }
             }
         }
-        faceAdj[f] = std::vector<int>(adjSet.begin(), adjSet.end());
+        faceAdj[f] = std::vector<int>(adjSet.begin(), adjSet.end());  // Converte o conjunto em um vetor e armazena.
     }
-    return faceAdj;
+    return faceAdj;  // Retorna o mapeamento de faces adjacentes.
 }
 
 // ======================================================================
 // Funções auxiliares para o cálculo de estatísticas
 // ======================================================================
 
-double computeMean(const std::vector<double>& values) {
-    if (values.empty()) return 0;
-    return std::accumulate(values.begin(), values.end(), 0.0) / values.size();
+double computeMean(const std::vector<double>& values) {  // Calcula a média dos valores.
+    if (values.empty()) return 0;  // Retorna 0 se o vetor estiver vazio.
+    return std::accumulate(values.begin(), values.end(), 0.0) / values.size();  // Soma todos os valores e divide pelo número de elementos.
 }
 
-double computeStdDev(const std::vector<double>& values, double mean) {
-    if (values.size() <= 1) return 0;
+double computeStdDev(const std::vector<double>& values, double mean) {  // Calcula o desvio padrão.
+    if (values.size() <= 1) return 0;  // Retorna 0 se houver apenas 1 valor ou nenhum.
     double accum = 0;
-    for (double v : values)
-        accum += (v - mean) * (v - mean);
-    return std::sqrt(accum / (values.size() - 1));
+    for (double v : values)  // Para cada valor:
+        accum += (v - mean) * (v - mean);  // Calcula a diferença ao quadrado em relação à média.
+    return std::sqrt(accum / (values.size() - 1));  // Retorna a raiz quadrada da variância (desvio padrão).
 }
 
-double computeMeanInt(const std::vector<int>& values) {
-    if (values.empty()) return 0;
-    return std::accumulate(values.begin(), values.end(), 0.0) / values.size();
+double computeMeanInt(const std::vector<int>& values) {  // Calcula a média para um vetor de inteiros.
+    if (values.empty()) return 0;  // Retorna 0 se o vetor estiver vazio.
+    return std::accumulate(values.begin(), values.end(), 0.0) / values.size();  // Soma e divide pelo tamanho.
 }
 
 // ======================================================================
 // Função que exporta os dados de desempenho para um arquivo CSV
 // ======================================================================
 
-void exportPerformanceData(const object::Object& obj, const std::string &outputFile) {
-    auto startTotal = Clock::now();
+void exportPerformanceData(const object::Object& obj, const std::string &outputFile) {  // Função que exporta os dados de desempenho para um arquivo CSV.
+    auto startTotal = Clock::now();  // Inicia a contagem de tempo total.
 
-    // Obter referências locais
+    // Obtém as referências para os vértices e faces do objeto.
     const auto& vertices = obj.getVertices();
     const auto& faces = obj.getFaces();
     int numVertices = vertices.size();
     int numFaces = faces.size();
 
-    // Pré-calcular mapeamento para acelerar as consultas
+    // Pré-calcula os mapeamentos necessários para acelerar as consultas.
     auto vertexToFaces = computeVertexToFaces(obj);
     auto faceAdjacency = computeFaceAdjacency(obj);
 
-    // Vetores para armazenar os dados de cada vértice:
-    std::vector<double> timeVertexFaces(numVertices, 0);    // Tempo para acessar as faces do vértice (usando o mapeamento)
-    std::vector<int> numVertexFaces(numVertices, 0);          // Número de faces que o vértice pertence
-    std::vector<double> timeVertexAdjacent(numVertices, 0);   // Tempo para acessar os vértices vizinhos
-    std::vector<int> numVertexAdjacent(numVertices, 0);       // Número de vértices vizinhos
+    // Vetores para armazenar os dados de desempenho dos vértices e faces
+    std::vector<double> timeVertexFaces(numVertices, 0);
+    std::vector<int> numVertexFaces(numVertices, 0);
+    std::vector<double> timeVertexAdjacent(numVertices, 0);
+    std::vector<int> numVertexAdjacent(numVertices, 0);
+    std::vector<double> timeAccessFaceVertices(numFaces, 0);
+    std::vector<int> numFaceVertices(numFaces, 0);
+    std::vector<double> timeFaceAdjacent(numFaces, 0);
+    std::vector<int> numFaceAdjacent(numFaces, 0);
 
-    // Vetores para armazenar os dados de cada face:
-    std::vector<double> timeAccessFaceVertices(numFaces, 0);  // Tempo para acessar os vértices da face (simples acesso)
-    std::vector<int> numFaceVertices(numFaces, 0);            // Número de vértices na face
-    std::vector<double> timeFaceAdjacent(numFaces, 0);        // Tempo para acessar as faces vizinhas (usando o mapeamento)
-    std::vector<int> numFaceAdjacent(numFaces, 0);            // Número de faces vizinhas
-
-    // Processa vértices em paralelo
+    // Processa os vértices em paralelo
     #pragma omp parallel for schedule(static)
     for (int v = 0; v < numVertices; ++v) {
         auto t1 = Clock::now();
@@ -191,7 +193,7 @@ void exportPerformanceData(const object::Object& obj, const std::string &outputF
     }
     std::cout << "PROCESSAMOS OS VERTICES" << std::endl;
 
-    // Processa faces em paralelo
+    // Processa as faces em paralelo
     #pragma omp parallel for schedule(static)
     for (int f = 0; f < numFaces; ++f) {
         auto t1 = Clock::now();
@@ -208,6 +210,7 @@ void exportPerformanceData(const object::Object& obj, const std::string &outputF
     }
     std::cout << "PROCESSAMOS AS FACES" << std::endl;
 
+    // Calcula o tempo total de execução
     auto endTotal = Clock::now();
     double totalTime = std::chrono::duration<double>(endTotal - startTotal).count();
 
@@ -219,19 +222,16 @@ void exportPerformanceData(const object::Object& obj, const std::string &outputF
 
     fout << "Tipo,Index,TempoFaces,NumFaces,TempoAdjacentes,NumAdjacentes\n";
 
-    // Dados dos vértices
     for (int v = 0; v < numVertices; ++v) {
         fout << "v," << v << "," << timeVertexFaces[v] << "," << numVertexFaces[v] << ","
              << timeVertexAdjacent[v] << "," << numVertexAdjacent[v] << "\n";
     }
 
-    // Dados das faces
     for (int f = 0; f < numFaces; ++f) {
         fout << "f," << f << "," << timeAccessFaceVertices[f] << "," << numFaceVertices[f] << ","
              << timeFaceAdjacent[f] << "," << numFaceAdjacent[f] << "\n";
     }
 
-    // Tempo total de execução
     fout << "total,," << totalTime << ",\n";
 
     fout.close();

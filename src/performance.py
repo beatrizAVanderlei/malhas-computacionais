@@ -2,14 +2,6 @@ import csv
 import statistics
 
 def read_performance_data(filename):
-
-    """
-    Lê o arquivo CSV gerado pela aplicação C++ e retorna:
-      - vertices: lista de tuplas (index, tempo_faces, num_faces, tempo_adjacentes, num_adjacent)
-      - faces: lista de tuplas (index, tempo_vertices, num_vertices, tempo_adjacentes, num_adjacent)
-      - total_time: tempo total de execução (lido na linha com Tipo "total")
-    """
-
     vertices = []
     faces = []
     total_time = None
@@ -18,7 +10,6 @@ def read_performance_data(filename):
         for row in reader:
             tipo = row['Tipo']
             if tipo == 'v':
-                # Para vértices, as colunas são: TempoFaces, NumFaces, TempoAdjacentes, NumAdjacentes
                 index = int(row['Index'])
                 time_faces = float(row['TempoFaces'])
                 num_faces = int(row['NumFaces'])
@@ -26,9 +17,6 @@ def read_performance_data(filename):
                 num_adjacent = int(row['NumAdjacentes'])
                 vertices.append((index, time_faces, num_faces, time_adjacent, num_adjacent))
             elif tipo == 'f':
-                # Para faces, as colunas são: TempoFaces, NumFaces, TempoAdjacentes, NumAdjacentes.
-                # Aqui, "TempoFaces" representa o tempo para acessar os vértices da face,
-                # e "NumFaces" representa o número de vértices na face.
                 index = int(row['Index'])
                 time_vertices = float(row['TempoFaces'])
                 num_vertices = int(row['NumFaces'])
@@ -36,13 +24,16 @@ def read_performance_data(filename):
                 num_adjacent = int(row['NumAdjacentes'])
                 faces.append((index, time_vertices, num_vertices, time_adjacent, num_adjacent))
             elif tipo == 'total':
-                # Para a linha total, a coluna "TempoFaces" contém o tempo total
                 total_time = float(row['TempoFaces'])
     return vertices, faces, total_time
 
 def compute_statistics(values):
+    # Filtra valores negativos antes de calcular as estatísticas
+    values = [v for v in values if v >= 0]
+
     if not values:
         return None, None, None, None
+
     mean_val = statistics.mean(values)
     min_val = min(values)
     max_val = max(values)
@@ -76,27 +67,28 @@ def analyze_performance_data(input_filename, output_txt="performance_results.txt
     f_ta_stats = compute_statistics(face_times_adj)
     f_na_stats = compute_statistics(face_num_adj)
 
+    # Verificar se o tempo total de execução é negativo
+    if total_time < 0:
+        total_time = 0  # Corrige caso o tempo total seja negativo
+
     output = []
     output.append(f"Quantidade de vértices: {len(vertices)}")
     output.append(f"Quantidade de faces: {len(faces)}")
-    output.append("")
     output.append("=== Estatísticas para vértices ===")
     output.append(f"Tempo para acessar faces: média={v_tf_stats[0]:.6f}, min={v_tf_stats[1]:.6f}, max={v_tf_stats[2]:.6f}, stdev={v_tf_stats[3]:.6f}")
     output.append(f"Número de faces: média={v_nf_stats[0]:.2f}, min={v_nf_stats[1]}, max={v_nf_stats[2]}, stdev={v_nf_stats[3]:.2f}")
     output.append(f"Tempo para acessar vizinhos: média={v_ta_stats[0]:.6f}, min={v_ta_stats[1]:.6f}, max={v_ta_stats[2]:.6f}, stdev={v_ta_stats[3]:.6f}")
     output.append(f"Número de vizinhos: média={v_na_stats[0]:.2f}, min={v_na_stats[1]}, max={v_na_stats[2]}, stdev={v_na_stats[3]:.2f}")
-    output.append("")
     output.append("=== Estatísticas para faces ===")
     output.append(f"Tempo para acessar vértices: média={f_tv_stats[0]:.6f}, min={f_tv_stats[1]:.6f}, max={f_tv_stats[2]:.6f}, stdev={f_tv_stats[3]:.6f}")
     output.append(f"Número de vértices: média={f_nv_stats[0]:.2f}, min={f_nv_stats[1]}, max={f_nv_stats[2]}, stdev={f_nv_stats[3]:.2f}")
     output.append(f"Tempo para acessar vizinhos: média={f_ta_stats[0]:.6f}, min={f_ta_stats[1]:.6f}, max={f_ta_stats[2]:.6f}, stdev={f_ta_stats[3]:.6f}")
     output.append(f"Número de vizinhos: média={f_na_stats[0]:.2f}, min={f_na_stats[1]}, max={f_na_stats[2]}, stdev={f_na_stats[3]:.2f}")
-    output.append("")
     output.append(f"Tempo total de execução (do C++): {total_time:.6f} segundos")
 
     with open(output_txt, "w") as f_out:
         f_out.write("\n".join(output))
 
 if __name__ == "__main__":
-    input_file = "C:/Users/bia/CLionProjects/teste/src/no-prep/performance-dragon-no-prep.csv"
-    analyze_performance_data(input_file, "C:/Users/bia/CLionProjects/teste/src/no-prep/performance-results-dragon-no-prep.txt")
+    input_file = "C:/Users/bia/CLionProjects/teste/src/mate-face/performance-heart-mf.csv"
+    analyze_performance_data(input_file, "C:/Users/bia/CLionProjects/teste/src/mate-face/performance-results-heart-mf.txt")

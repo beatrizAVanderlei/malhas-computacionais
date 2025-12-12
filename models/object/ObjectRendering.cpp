@@ -1,5 +1,6 @@
 #include "object.h"
 #include <iostream>
+#include <algorithm>
 #ifdef __APPLE__
 #include <GLUT/glut.h>
 #else
@@ -26,9 +27,9 @@ namespace object {
 
         // Desenha vértices se não estiver em modo "apenas faces"
         if (!faceOnlyMode) {
-            glPointSize(vertexOnlyMode ? 8.0f : 5.0f);
+            glPointSize(vertexOnlyMode ? 5.0f : 5.0f);
             Color vertexColor = colors.count("vertex") ? colors.at("vertex") : Color{0.0f, 0.0f, 0.0f};
-            drawVerticesVBO(vertexColor);
+            drawVerticesVBO(vertexColor);  // Chama a função modificada
         }
         glPopMatrix();
     }
@@ -76,13 +77,23 @@ namespace object {
     }
 
     void Object::drawVerticesVBO(const Color& defaultColor) {
-        glPointSize(5.0f);
+        float tamanhoPadrao = 5.0f;
+        float tamanhoSelecionado = tamanhoPadrao * 2.0f;
+
         glBegin(GL_POINTS);
         for (size_t i = 0; i < vertices_.size(); ++i) {
+            int index = static_cast<int>(i);  // Conversão explícita para int
+
+            // Garantir que selectedVertices é um std::vector<int>
+            bool isSelected = (std::find(selectedVertices.begin(), selectedVertices.end(), index) != selectedVertices.end());
+
+            glPointSize(isSelected ? tamanhoSelecionado : tamanhoPadrao);
+
             Color col = defaultColor;
             if (i < vertexColors.size())
                 col = vertexColors[i];
             glColor3f(col[0], col[1], col[2]);
+
             const std::array<float, 3>& vertex = vertices_[i];
             glVertex3f(vertex[0], vertex[1], vertex[2]);
         }

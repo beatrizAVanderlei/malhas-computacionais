@@ -55,6 +55,9 @@ namespace object {
             void createVertexAndLinkToSelectedFaces();
             void editVertexCoordinates(int vertexIndex);
             void selectCellFromSelectedFace(int faceOriginalIndex);
+            void updateConnectivity();
+            void selectFacesByGroup(int faceIndex);
+            const std::vector<unsigned int>& getFaceCells() const { return face_cells_; }
             int getCurrentIndex(int originalIndex) const;
 
             // Funções utilitárias
@@ -68,6 +71,9 @@ namespace object {
             const std::vector<std::array<float, 3>>& getVertices() const { return vertices_; }
             const std::vector<std::vector<unsigned int>>& getFaces() const { return faces_; }
             const std::vector<std::pair<unsigned int, unsigned int>>& getEdges() const { return edges_; }
+            const std::vector<std::vector<int>>& getFaceAdjacency() const {
+                return faceAdjacencyMapping;
+            }
 
             void clearColors() {
                 faceColors.clear();
