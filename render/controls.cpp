@@ -106,60 +106,43 @@ namespace controls {
             glutPostRedisplay();
         }
         else if (lowerKey == 'p') {
-            // --- LÓGICA DO PATH TRACING (ATUALIZADA) ---
             g_pathTracingMode = !g_pathTracingMode;
 
             if (g_pathTracingMode) {
-                std::cout << "Path Tracing Ativado! Sincronizando malha..." << std::endl;
+                std::cout << "Path Tracing Ativado! Sincronizando malha e processando texturas..." << std::endl;
 
-                // 1. Acessa os dados ATUAIS do objeto editado
-                // (Assumindo que g_object tem os métodos getVertices e getFaces)
                 const auto& currentVertices = g_object->getVertices();
                 const auto& currentFaces = g_object->getFaces();
 
-                if (currentVertices.empty()) {
-                    std::cerr << "Erro: Objeto vazio." << std::endl;
-                    g_pathTracingMode = false;
-                    return;
-                }
+                // Getters do Object
+                const auto& textureCache = g_object->getTextureCache();
+                const auto& faceTexMap = g_object->getFaceTextureMap();
+                const auto& faceUvMap = g_object->getFaceUvMap();
 
-                // 2. Recalcula Bounding Box para Centralizar e Escalar
-                // (Precisamos refazer isso pois a nova face pode ter mudado o tamanho do objeto)
+                if (currentVertices.empty()) { g_pathTracingMode = false; return; }
+
+                // 1. Normalização e Escala
                 float minX = currentVertices[0][0], maxX = currentVertices[0][0];
                 float minY = currentVertices[0][1], maxY = currentVertices[0][1];
                 float minZ = currentVertices[0][2], maxZ = currentVertices[0][2];
-
                 for (const auto& v : currentVertices) {
                     if (v[0] < minX) minX = v[0]; if (v[0] > maxX) maxX = v[0];
                     if (v[1] < minY) minY = v[1]; if (v[1] > maxY) maxY = v[1];
                     if (v[2] < minZ) minZ = v[2]; if (v[2] > maxZ) maxZ = v[2];
                 }
-
                 float centerX = (minX + maxX) / 2.0f;
                 float centerY = (minY + maxY) / 2.0f;
                 float centerZ = (minZ + maxZ) / 2.0f;
-
-                float w = maxX - minX;
-                float h = maxY - minY;
-                float d = maxZ - minZ;
+                float w = maxX - minX, h = maxY - minY, d = maxZ - minZ;
                 float maxDim = std::max(std::max(w, h), d);
-
-                // Fator de escala para o Path Tracer (Alvo: tamanho ~2.0)
                 float scale = 2.0f / (maxDim > 0 ? maxDim : 1.0f);
 
-                // 3. Prepara a Cena Estática para o Renderizador
+                // 2. Prepara SceneData
                 static SceneData scene;
+                if (scene.bvhRoot) { delete scene.bvhRoot; scene.bvhRoot = nullptr; }
+                scene.vertices.clear(); scene.faces.clear(); scene.triIndices.clear();
+                scene.textures.clear(); scene.faceTextureID.clear(); scene.faceUVs.clear();
 
-                // Limpa lixo anterior da BVH para evitar memory leak
-                if (scene.bvhRoot) {
-                    delete scene.bvhRoot; // O destrutor da SceneData cuida recursivamente
-                    scene.bvhRoot = nullptr;
-                }
-                scene.vertices.clear();
-                scene.faces.clear();
-                scene.triIndices.clear();
-
-                // 4. Copia e Transforma Vértices (Objeto -> PathTracer)
                 for (const auto& v : currentVertices) {
                     scene.vertices.push_back(Vec3(
                         (v[0] - centerX) * scale,
@@ -168,48 +151,86 @@ namespace controls {
                     ));
                 }
 
-                // 5. Copia Faces (com Triangulação Automática)
-                for (const auto& face : currentFaces) {
+                // 3. PROCESSAMENTO OTIMIZADO DE TEXTURAS (Pré-cálculo)
+                std::map<GLuint, int> glToPtMap;
+
+                for (auto const& [glID, rawData] : textureCache) {
+                    TextureData tex;
+                    tex.width = rawData.width;
+                    tex.height = rawData.height;
+
+                    // Aloca memória para floats (R, G, B)
+                    int numPixels = tex.width * tex.height;
+                    tex.pixels.resize(numPixels * 3);
+
+                    // [OTIMIZAÇÃO] Converte Byte->Float e aplica Gama/Boost AQUI
+                    // Isso evita fazer pow() milhões de vezes no render loop.
+                    for (int i = 0; i < numPixels * 3; ++i) {
+                        float val = rawData.pixels[i] / 255.0f; // Normaliza 0..1
+
+                        // Aplica Correção Gama (sRGB -> Linear) e Boost de Vivacidade (1.3x)
+                        tex.pixels[i] = std::pow(val, 2.2f) * 1.3f;
+                    }
+
+                    scene.textures.push_back(tex);
+                    glToPtMap[glID] = (int)scene.textures.size() - 1;
+                }
+
+                // 4. Copia Faces e UVs
+                for (size_t fIdx = 0; fIdx < currentFaces.size(); ++fIdx) {
+                    const auto& face = currentFaces[fIdx];
+
+                    int currentTexID = -1;
+                    if (faceTexMap.count(fIdx) && glToPtMap.count(faceTexMap.at(fIdx))) {
+                        currentTexID = glToPtMap.at(faceTexMap.at(fIdx));
+                    }
+
+                    // Conversão Vec2 -> PtVec2
+                    std::vector<PtVec2> originalUVs;
+                    if (currentTexID != -1 && faceUvMap.count(fIdx)) {
+                        for (const auto& uv : faceUvMap.at(fIdx)) {
+                            originalUVs.push_back({uv.u, uv.v});
+                        }
+                    }
+
                     if (face.size() == 3) {
-                        // Triângulo normal: copia direto
-                        std::vector<unsigned int> f_uint;
-                        for(auto idx : face) f_uint.push_back(static_cast<unsigned int>(idx));
-                        scene.faces.push_back(f_uint);
+                        std::vector<unsigned int> tri = {face[0], face[1], face[2]};
+                        scene.faces.push_back(tri);
+                        scene.faceTextureID.push_back(currentTexID);
+
+                        if(currentTexID != -1 && originalUVs.size() >= 3)
+                            scene.faceUVs.push_back({originalUVs[0], originalUVs[1], originalUVs[2]});
+                        else
+                            scene.faceUVs.push_back({});
                     }
                     else if (face.size() == 4) {
-                        // Quadrilátero: Divide em 2 triângulos
-                        // Triângulo A: vértices 0, 1, 2
-                        std::vector<unsigned int> t1;
-                        t1.push_back(static_cast<unsigned int>(face[0]));
-                        t1.push_back(static_cast<unsigned int>(face[1]));
-                        t1.push_back(static_cast<unsigned int>(face[2]));
-                        scene.faces.push_back(t1);
+                        // Tri 1
+                        scene.faces.push_back({face[0], face[1], face[2]});
+                        scene.faceTextureID.push_back(currentTexID);
+                        if(currentTexID != -1 && originalUVs.size() >= 4)
+                            scene.faceUVs.push_back({originalUVs[0], originalUVs[1], originalUVs[2]});
+                        else scene.faceUVs.push_back({});
 
-                        // Triângulo B: vértices 0, 2, 3
-                        std::vector<unsigned int> t2;
-                        t2.push_back(static_cast<unsigned int>(face[0]));
-                        t2.push_back(static_cast<unsigned int>(face[2]));
-                        t2.push_back(static_cast<unsigned int>(face[3]));
-                        scene.faces.push_back(t2);
+                        // Tri 2
+                        scene.faces.push_back({face[0], face[2], face[3]});
+                        scene.faceTextureID.push_back(currentTexID);
+                        if(currentTexID != -1 && originalUVs.size() >= 4)
+                            scene.faceUVs.push_back({originalUVs[0], originalUVs[2], originalUVs[3]});
+                        else scene.faceUVs.push_back({});
                     }
                     else if (face.size() > 4) {
-                        // Polígono Genérico (Fan Triangulation):
-                        // Cria triângulos conectando o primeiro vértice a todos os outros
                         for (size_t i = 1; i < face.size() - 1; ++i) {
-                            std::vector<unsigned int> t;
-                            t.push_back(static_cast<unsigned int>(face[0]));
-                            t.push_back(static_cast<unsigned int>(face[i]));
-                            t.push_back(static_cast<unsigned int>(face[i + 1]));
-                            scene.faces.push_back(t);
+                            scene.faces.push_back({face[0], face[i], face[i + 1]});
+                            scene.faceTextureID.push_back(currentTexID);
+                            if(currentTexID != -1 && originalUVs.size() >= face.size())
+                                scene.faceUVs.push_back({originalUVs[0], originalUVs[i], originalUVs[i+1]});
+                            else scene.faceUVs.push_back({});
                         }
                     }
                 }
 
-                // 6. Constrói a Aceleração (BVH)
-                std::cout << "Construindo BVH para " << scene.faces.size() << " faces..." << std::endl;
+                std::cout << "Construindo BVH..." << std::endl;
                 buildBVH(scene);
-
-                // Conecta e Inicia
                 g_renderMesh = &scene;
 
                 int winW = glutGet(GLUT_WINDOW_WIDTH);
@@ -217,7 +238,6 @@ namespace controls {
                 initPathTracingTexture(winW, winH);
 
             } else {
-                std::cout << "Voltando para OpenGL..." << std::endl;
                 g_renderMesh = nullptr;
             }
             glutPostRedisplay();
@@ -301,6 +321,32 @@ namespace controls {
                keyDown(key);
             }
             glutPostRedisplay();
+        }
+        // Em keyboardDownCallback:
+        // Em controls.cpp -> keyboardDownCallback
+
+        else if (lowerKey == 't') {
+            // Verifica se existe ALGUMA seleção (1 ou mais faces)
+            if (!g_object->getSelectedFaces().empty()) {
+
+                // Abre o seletor de arquivos
+                const char* filepath = tinyfd_openFileDialog(
+                    "Selecionar Textura",
+                    "",
+                    2,
+                    (const char*[]){"*.png", "*.jpg"},
+                    "Imagens",
+                    0
+                );
+
+                if (filepath) {
+                    // A função interna do objeto cuida de distribuir a textura para todas as faces selecionadas
+                    g_object->applyTextureToSelectedFaces(std::string(filepath));
+                    glutPostRedisplay();
+                }
+            } else {
+                std::cout << "Selecione uma ou mais faces para aplicar textura." << std::endl;
+            }
         }
         else if (lowerKey == 'k') {
             if (!g_object->getSelectedVertices().empty()) {

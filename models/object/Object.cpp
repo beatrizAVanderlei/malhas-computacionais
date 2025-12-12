@@ -1,3 +1,5 @@
+#define STB_IMAGE_IMPLEMENTATION
+#include "../libs/stb_image.h"
 #include "object.h"
 #include <algorithm>
 #include <set>
@@ -6,6 +8,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <iostream>
+
 #ifdef __APPLE__
 #include <GLUT/glut.h>
 #else
@@ -28,7 +31,6 @@ namespace object {
             return h1 ^ (h2 << 1);
         }
     };
-
 
     // Construtor:
     Object::Object(const std::array<float, 3>& position,
@@ -53,7 +55,7 @@ namespace object {
     {
         // Inicializa as cores padrão para vértices e faces
         vertexColors.resize(vertices_.size(), Color{0.0f, 0.0f, 0.0f});
-        faceColors.resize(faces_.size(), Color{60.0f/255.0f, 60.0f/255.0f, 60.0f/255.0f});
+        faceColors.resize(faces_.size(), Color{0.8f, 0.8f, 0.8f});
 
         facesOriginais = faces_;
 
@@ -202,9 +204,205 @@ namespace object {
         return triangles;
     }
 
+    GLuint Object::loadTexture(const std::string& filepath) {
+        int width, height, nrChannels;
+        stbi_set_flip_vertically_on_load(true);
+        unsigned char* data = stbi_load(filepath.c_str(), &width, &height, &nrChannels, 0);
+
+        if (!data) {
+            std::cerr << "Falha ao carregar textura." << std::endl;
+            return 0;
+        }
+
+        GLuint textureID;
+        glGenTextures(1, &textureID);
+        glBindTexture(GL_TEXTURE_2D, textureID);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+
+        // [NOVO] Salva cópia na RAM para o Path Tracer
+        RawTextureData raw;
+        raw.width = width;
+        raw.height = height;
+
+        // Se for RGBA, converte para RGB (Path Tracer simples prefere RGB)
+        int numPixels = width * height;
+        raw.pixels.reserve(numPixels * 3);
+
+        for(int i = 0; i < numPixels; ++i) {
+            int srcIdx = i * nrChannels;
+            raw.pixels.push_back(data[srcIdx]);     // R
+            raw.pixels.push_back(data[srcIdx + 1]); // G
+            raw.pixels.push_back(data[srcIdx + 2]); // B
+        }
+
+        texture_cache_cpu_[textureID] = raw; // Salva no mapa
+
+        stbi_image_free(data);
+        return textureID;
+    }
+
+    // --- GETTERS DE TEXTURA IMPLEMENTADOS AQUI ---
+    const std::map<GLuint, RawTextureData>& Object::getTextureCache() const {
+        return texture_cache_cpu_;
+    }
+
+    const std::map<int, GLuint>& Object::getFaceTextureMap() const {
+        return face_texture_map_;
+    }
+
+    const std::map<int, std::vector<Vec2>>& Object::getFaceUvMap() const {
+        return face_uv_map_;
+    }
+    // ---------------------------------------------
+
+    // Aplica a textura na face selecionada
+    void Object::applyTextureToSelectedFaces(const std::string& filepath) {
+        // 1. Verificação de segurança
+        if (selectedFaces.empty()) {
+            std::cout << "Nenhuma face selecionada." << std::endl;
+            return;
+        }
+
+        // 2. Carrega a textura APENAS UMA VEZ
+        GLuint texID = loadTexture(filepath);
+        if (texID == 0) return;
+
+        std::cout << "Aplicando textura continua em " << selectedFaces.size() << " faces..." << std::endl;
+
+        // --- PASSO 1: CALCULAR BOUNDING BOX DA SELEÇÃO ---
+        // Precisamos saber o tamanho total da área selecionada para esticar a textura sobre ela
+        float minX = 1e20f, maxX = -1e20f;
+        float minY = 1e20f, maxY = -1e20f;
+        float minZ = 1e20f, maxZ = -1e20f;
+
+        for (int faceIdx : selectedFaces) {
+            for (unsigned int vIdx : faces_[faceIdx]) {
+                const auto& v = vertices_[vIdx];
+                if (v[0] < minX) minX = v[0]; if (v[0] > maxX) maxX = v[0];
+                if (v[1] < minY) minY = v[1]; if (v[1] > maxY) maxY = v[1];
+                if (v[2] < minZ) minZ = v[2]; if (v[2] > maxZ) maxZ = v[2];
+            }
+        }
+
+        // Calcula as dimensões
+        float dx = maxX - minX;
+        float dy = maxY - minY;
+        float dz = maxZ - minZ;
+
+        // --- PASSO 2: ESCOLHER O MELHOR PLANO DE PROJEÇÃO ---
+        // Descobrimos qual eixo é o "mais chato" (menor variação) para usar como normal.
+        // Ex: Um chão varia muito em X e Z, mas quase nada em Y. Logo, projetamos no plano XZ.
+        int projectionPlane = 0; // 0=YZ, 1=XZ, 2=XY
+
+        if (dx <= dy && dx <= dz) {
+            projectionPlane = 0; // Variação em X é a menor -> Projeta em YZ (Lado)
+        }
+        else if (dy <= dx && dy <= dz) {
+            projectionPlane = 1; // Variação em Y é a menor -> Projeta em XZ (Chão/Teto)
+        }
+        else {
+            projectionPlane = 2; // Variação em Z é a menor -> Projeta em XY (Frente)
+        }
+
+        // Evita divisão por zero se a seleção for uma linha ou ponto
+        if (dx < 1e-4) dx = 1.0f;
+        if (dy < 1e-4) dy = 1.0f;
+        if (dz < 1e-4) dz = 1.0f;
+
+        // --- PASSO 3: GERAR UVs BASEADO NA POSIÇÃO GLOBAL ---
+        for (int faceIdx : selectedFaces) {
+            face_texture_map_[faceIdx] = texID;
+
+            std::vector<Vec2> uvs;
+            const auto& face = faces_[faceIdx];
+
+            for (unsigned int vIdx : face) {
+                const auto& v = vertices_[vIdx];
+                float u = 0.0f, coord_v = 0.0f; // Renomeado para evitar conflito com 'v' do vértice
+
+                // Calcula a posição relativa (0.0 a 1.0) dentro da caixa de seleção
+                if (projectionPlane == 0) { // Plano YZ
+                    u = (v[1] - minY) / dy;       // Eixo Y vira U
+                    coord_v = (v[2] - minZ) / dz; // Eixo Z vira V
+                }
+                else if (projectionPlane == 1) { // Plano XZ (Mais comum para chão)
+                    u = (v[0] - minX) / dx;       // Eixo X vira U
+                    coord_v = (v[2] - minZ) / dz; // Eixo Z vira V
+                    // Opcional: Inverter V se a imagem ficar de cabeça para baixo
+                    coord_v = 1.0f - coord_v;
+                }
+                else { // Plano XY
+                    u = (v[0] - minX) / dx;       // Eixo X vira U
+                    coord_v = (v[1] - minY) / dy; // Eixo Y vira V
+                }
+
+                uvs.push_back({u, coord_v});
+            }
+            face_uv_map_[faceIdx] = uvs;
+        }
+    }
+
+    // Desenha as faces texturizadas (Overlay)
+    void Object::drawTexturedFaces() {
+        if (face_texture_map_.empty()) return;
+
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        // Configuração para desenhar sobre a malha sem z-fighting
+        glDepthFunc(GL_LEQUAL);
+
+        glColor3f(1.0f, 1.0f, 1.0f); // Cor neutra para a textura
+
+        for (auto const& [faceIdx, texID] : face_texture_map_) {
+            // Segurança de índice
+            if (faceIdx < 0 || faceIdx >= static_cast<int>(faces_.size())) continue;
+
+            // [CORREÇÃO] Verifica se a face está na lista de seleção
+            bool isSelected = false;
+            for (int s : selectedFaces) {
+                if (s == faceIdx) {
+                    isSelected = true;
+                    break;
+                }
+            }
+
+            // Se a face estiver selecionada, NÃO desenha a textura.
+            // Isso permite que a cor vermelha da malha base (definida no controls.cpp) apareça.
+            if (isSelected) continue;
+
+            const auto& face = faces_[faceIdx];
+
+            if (face_uv_map_.find(faceIdx) == face_uv_map_.end()) continue;
+            const auto& uvs = face_uv_map_[faceIdx];
+
+            glBindTexture(GL_TEXTURE_2D, texID);
+
+            glBegin(GL_POLYGON);
+            for (size_t i = 0; i < face.size(); ++i) {
+                if (i < uvs.size()) glTexCoord2f(uvs[i].u, uvs[i].v);
+
+                int vIdx = face[i];
+                glVertex3f(vertices_[vIdx][0], vertices_[vIdx][1], vertices_[vIdx][2]);
+            }
+            glEnd();
+        }
+
+        glDisable(GL_TEXTURE_2D);
+        glDisable(GL_BLEND);
+        glDepthFunc(GL_LESS); // Restaura o teste de profundidade padrão
+    }
+
     // Configura os VBOs e IBOs: prepara os arrays e envia os dados para a GPU
     void Object::setupVBOs() {
-        // Converte os vértices para um array "achatado"
         vertex_array_.clear();
         for (const auto& v : vertices_) {
             vertex_array_.push_back(v[0]);
@@ -212,7 +410,6 @@ namespace object {
             vertex_array_.push_back(v[2]);
         }
 
-        // Triangula as faces e constrói o array de índices para faces
         face_index_array_.clear();
         auto tri_faces = triangulateFaces(faces_);
         for (const auto& tri : tri_faces) {
@@ -221,36 +418,33 @@ namespace object {
             face_index_array_.push_back(tri[2]);
         }
 
-        // Constrói o array de índices para as arestas
         edge_index_array_.clear();
         for (const auto& edge : edges_) {
             edge_index_array_.push_back(edge.first);
             edge_index_array_.push_back(edge.second);
         }
 
-        // Gera os buffers na GPU, se necessário
-        if (vbo_vertices_ == 0)
-            glGenBuffers(1, &vbo_vertices_);
-        if (ibo_faces_ == 0)
-            glGenBuffers(1, &ibo_faces_);
-        if (ibo_edges_ == 0)
-            glGenBuffers(1, &ibo_edges_);
+        if (vbo_vertices_ == 0) glGenBuffers(1, &vbo_vertices_);
+        if (ibo_faces_ == 0) glGenBuffers(1, &ibo_faces_);
+        if (ibo_edges_ == 0) glGenBuffers(1, &ibo_edges_);
 
-        // Envia os dados dos vértices
         glBindBuffer(GL_ARRAY_BUFFER, vbo_vertices_);
         glBufferData(GL_ARRAY_BUFFER, vertex_array_.size() * sizeof(float), vertex_array_.data(), GL_STATIC_DRAW);
 
-        // Envia os dados dos índices dos triângulos (faces)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_faces_);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, face_index_array_.size() * sizeof(unsigned int), face_index_array_.data(), GL_STATIC_DRAW);
 
-        // Envia os dados dos índices das arestas
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_edges_);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, edge_index_array_.size() * sizeof(unsigned int), edge_index_array_.data(), GL_STATIC_DRAW);
 
-        // Desvincula os buffers
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    }
+
+    void Object::clearColors() {
+        std::fill(vertexColors.begin(), vertexColors.end(), Color{0.0f, 0.0f, 0.0f});
+        Color faceDefault = {0.8f, 0.8f, 0.8f};
+        std::fill(faceColors.begin(), faceColors.end(), faceDefault);
     }
 
     // Atualiza os VBOs chamando setupVBOs()

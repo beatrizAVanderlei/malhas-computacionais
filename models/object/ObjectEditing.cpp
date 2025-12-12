@@ -394,93 +394,97 @@ namespace object {
     // -----------------------
 
     void Object::deleteSelectedElements() {
-    // =====================================
-    // REMOÇÃO DE FACES SELECIONADAS
-    // =====================================
+    // =========================================================
+    // 1. REMOÇÃO DE FACES
+    // =========================================================
     if (!selectedFaces.empty()) {
-        // Em vez de coletar faces equivalentes, usamos apenas as faces selecionadas
+        std::cout << "Removendo " << selectedFaces.size() << " faces..." << std::endl;
+
         std::unordered_set<int> facesToDelete(selectedFaces.begin(), selectedFaces.end());
 
-        // Ordenar os índices em ordem decrescente para remover sem invalidar os índices
-        std::vector<int> deleteIndices(facesToDelete.begin(), facesToDelete.end());
-        std::sort(deleteIndices.begin(), deleteIndices.end(), std::greater<int>());
+        // Estruturas para a nova lista de faces
+        std::vector<std::vector<unsigned int>> newFaces;
+        std::vector<Color> newFaceColors;
+        std::vector<unsigned int> newFaceCells;
+        std::map<int, GLuint> newTextureMap;
+        std::map<int, std::vector<Vec2>> newUvMap;
 
-        for (int faceIndex : deleteIndices) {
-            if (faceIndex >= 0 && faceIndex < static_cast<int>(faces_.size())) {
-                // Remove a face e a cor correspondente
-                faces_.erase(faces_.begin() + faceIndex);
-                if (faceIndex < static_cast<int>(faceColors.size()))
-                    faceColors.erase(faceColors.begin() + faceIndex);
+        // Mapeamento para corrigir o Picking
+        std::vector<int> oldToNewIndex(faces_.size(), -1);
+        int newIndex = 0;
 
-                // Atualiza o mapeamento originalToCurrentIndex:
-                // Para cada par (original, atual) no mapeamento:
-                for (auto &pair : originalToCurrentIndex) {
-                    // Se esse par corresponde à face removida, marca como inválido
-                    if (pair.second == faceIndex) {
-                        pair.second = -1;
-                    }
-                    // Se o índice atual é maior que o removido, decrementa em 1
-                    else if (pair.second > faceIndex) {
-                        pair.second--;
-                    }
+        for (int oldIndex = 0; oldIndex < static_cast<int>(faces_.size()); ++oldIndex) {
+            // Se a face NÃO for deletada, copiamos ela
+            if (facesToDelete.find(oldIndex) == facesToDelete.end()) {
+
+                // Copia geometria
+                newFaces.push_back(faces_[oldIndex]);
+
+                // Copia Cor
+                if (oldIndex < static_cast<int>(faceColors.size())) {
+                    newFaceColors.push_back(faceColors[oldIndex]);
+                } else {
+                    newFaceColors.push_back({0.8f, 0.8f, 0.8f});
                 }
+
+                // Copia Grupo
+                if (oldIndex < static_cast<int>(face_cells_.size())) {
+                    newFaceCells.push_back(face_cells_[oldIndex]);
+                }
+
+                // Copia Textura
+                if (face_texture_map_.count(oldIndex)) {
+                    newTextureMap[newIndex] = face_texture_map_[oldIndex];
+                    newUvMap[newIndex] = face_uv_map_[oldIndex];
+                }
+
+                oldToNewIndex[oldIndex] = newIndex;
+                newIndex++;
             }
         }
 
-        // Após remover as faces, removemos os vértices órfãos:
-        std::unordered_set<int> usedVertices;
-        for (const auto &face : faces_) {
-            for (unsigned int idx : face) {
-                usedVertices.insert(idx);
+        // Atualiza Picking Map
+        for (auto &pair : originalToCurrentIndex) {
+            int currentIdx = pair.second;
+            if (currentIdx >= 0 && currentIdx < static_cast<int>(oldToNewIndex.size())) {
+                pair.second = oldToNewIndex[currentIdx];
+            } else {
+                pair.second = -1;
             }
         }
 
-        // Cria nova lista de vértices e mapeia os índices antigos para os novos
-        std::vector<std::array<float, 3>> newVertices;
-        std::vector<Color> newVertexColors;
-        std::vector<int> indexMapping(vertices_.size(), -1);
+        // Aplica as alterações APENAS NAS FACES
+        faces_ = std::move(newFaces);
+        faceColors = std::move(newFaceColors);
+        face_cells_ = std::move(newFaceCells);
+        face_texture_map_ = std::move(newTextureMap);
+        face_uv_map_ = std::move(newUvMap);
 
-        for (int i = 0; i < static_cast<int>(vertices_.size()); i++) {
-            if (usedVertices.find(i) != usedVertices.end()) {
-                indexMapping[i] = static_cast<int>(newVertices.size());
-                newVertices.push_back(vertices_[i]);
-                newVertexColors.push_back(vertexColors[i]);
-            }
-        }
-
-        // Atualiza os vértices e as cores
-        vertices_ = std::move(newVertices);
-        vertexColors = std::move(newVertexColors);
-
-        // Atualiza os índices de cada face conforme o novo mapeamento
-        for (auto &face : faces_) {
-            for (auto &idx : face) {
-                idx = static_cast<unsigned int>(indexMapping[idx]);
-            }
-        }
-
-        // IMPORTANTE: Recalcular as arestas e mapeamentos de vizinhança
-        edges_ = calculateEdges(faces_);
-        vertexToFacesMapping = computeVertexToFaces();
-        faceAdjacencyMapping = computeFaceAdjacency();
-
-        // Atualiza VBOs e limpa a lista de faces selecionadas
-        setupVBOs();
         selectedFaces.clear();
 
-        std::cout << "Faces selecionadas (somente as explicitamente escolhidas) removidas da malha." << std::endl;
+        // [REMOVIDO] O bloco que limpava "vértices órfãos" foi deletado daqui.
+        // Agora os vértices permanecem intactos ao deletar faces.
+
+        // Atualiza GPU e Topologia
+        edges_ = calculateEdges(faces_);
+        updateConnectivity();
+        setupVBOs();
+
+        std::cout << "Faces removidas com sucesso." << std::endl;
+        return;
     }
 
     // =====================================
-    // REMOÇÃO DE VÉRTICES SELECIONADOS
+    // 2. REMOÇÃO DE VÉRTICES SELECIONADOS
     // =====================================
     if (!selectedVertices.empty()) {
         std::unordered_set<int> removed(selectedVertices.begin(), selectedVertices.end());
+
         std::vector<std::array<float, 3>> newVertices;
         std::vector<Color> newVertexColors;
         std::vector<int> indexMapping(vertices_.size(), -1);
 
-        // Cria novo conjunto de vértices, ignorando os removidos
+        // 1. Reconstrói lista de vértices (sem os deletados)
         for (int i = 0; i < static_cast<int>(vertices_.size()); i++) {
             if (removed.find(i) == removed.end()) {
                 indexMapping[i] = static_cast<int>(newVertices.size());
@@ -489,50 +493,57 @@ namespace object {
             }
         }
 
-        vertices_ = std::move(newVertices);
-        vertexColors = std::move(newVertexColors);
-
-        // Atualiza faces, removendo aquelas que possuem vértices removidos
-        std::vector<std::vector<unsigned int>> newFaces;
+        // 2. Reconstrói faces (removendo as que usavam os vértices deletados)
+        std::vector<std::vector<unsigned int>> newFacesVec; // Renomeado para evitar conflito
         std::vector<Color> newFaceColors;
+        std::vector<unsigned int> newFaceCells;
+        std::map<int, GLuint> newTextureMap;
+        std::map<int, std::vector<Vec2>> newUvMap;
+
+        int newFaceIndex = 0;
 
         for (size_t i = 0; i < faces_.size(); ++i) {
-            bool faceContainsRemoved = false;
+            bool faceIsBroken = false;
+            std::vector<unsigned int> updatedFace;
 
             for (unsigned int idx : faces_[i]) {
-                if (removed.find(static_cast<int>(idx)) != removed.end()) {
-                    faceContainsRemoved = true;
+                if (removed.count(static_cast<int>(idx))) {
+                    faceIsBroken = true;
                     break;
                 }
+                updatedFace.push_back(static_cast<unsigned int>(indexMapping[idx]));
             }
 
-            if (!faceContainsRemoved) {
-                std::vector<unsigned int> updatedFace;
-                for (unsigned int idx : faces_[i]) {
-                    updatedFace.push_back(static_cast<unsigned int>(indexMapping[idx]));
-                }
-                newFaces.push_back(updatedFace);
+            if (!faceIsBroken && !updatedFace.empty()) {
+                newFacesVec.push_back(updatedFace);
 
-                // Mantém a cor original da face (se houver)
-                if (i < faceColors.size()) {
-                    newFaceColors.push_back(faceColors[i]);
+                if (i < faceColors.size()) newFaceColors.push_back(faceColors[i]);
+                if (i < face_cells_.size()) newFaceCells.push_back(face_cells_[i]);
+
+                if (face_texture_map_.count(i)) {
+                    newTextureMap[newFaceIndex] = face_texture_map_[i];
+                    newUvMap[newFaceIndex] = face_uv_map_[i];
                 }
+
+                newFaceIndex++;
             }
         }
 
-        faces_ = std::move(newFaces);
+        // Aplica as mudanças
+        vertices_ = std::move(newVertices);
+        vertexColors = std::move(newVertexColors);
+        faces_ = std::move(newFacesVec);
         faceColors = std::move(newFaceColors);
+        face_cells_ = std::move(newFaceCells);
+        face_texture_map_ = std::move(newTextureMap);
+        face_uv_map_ = std::move(newUvMap);
 
-        // IMPORTANTE: Recalcular as arestas e mapeamentos de vizinhança
         edges_ = calculateEdges(faces_);
-        vertexToFacesMapping = computeVertexToFaces();
-        faceAdjacencyMapping = computeFaceAdjacency();
-
-        // Atualiza VBOs e limpa a lista de vértices selecionados
+        updateConnectivity();
         setupVBOs();
         selectedVertices.clear();
 
-        std::cout << "Vértices selecionados removidos da malha." << std::endl;
+        std::cout << "Vértices removidos. Malha atualizada." << std::endl;
     }
 }
 
