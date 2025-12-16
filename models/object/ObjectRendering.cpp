@@ -9,7 +9,7 @@
  * - A GPU desenha nativamente apenas triângulos. O objeto pode conter faces complexas
  * (quadriláteros, polígonos côncavos/convexos).
  * - A função `triangulateFaces` converte qualquer N-gono em um conjunto de triângulos
- * usando o método "Triangle Fan" (Vértice 0 conecta a todos).
+ * usando o metodo "Triangle Fan" (Vértice 0 conecta a todos).
  * * 2. VERTEX BUFFER OBJECTS (VBOs) & INDEX BUFFER OBJECTS (IBOs):
  * - Em vez de enviar vértices um por um a cada frame (modo imediato `glBegin/glEnd` lento),
  * armazenamos os dados na memória da placa de vídeo (VRAM).
@@ -22,7 +22,7 @@
  * - Implementa lógica de overlay para desenhar texturas sobre a malha base, respeitando
  * a seleção do usuário (o vermelho da seleção tem prioridade sobre a textura).
  * * 4. RENDERIZAÇÃO EM CAMADAS (Multi-pass Rendering):
- * - O método `draw` orquestra o desenho em ordem específica para lidar com profundidade:
+ * - O metodo `draw` orquestra o desenho em ordem específica para lidar com profundidade:
  * a) Faces Sólidas (Fundo) -> Escreve no Z-Buffer.
  * b) Arestas (Wireframe) -> Linhas pretas para definição de forma.
  * c) Vértices (Pontos) -> Dupla passada para desenhar normais e selecionados (com Z-Test desativado).
