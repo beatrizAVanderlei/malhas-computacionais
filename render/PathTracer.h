@@ -54,6 +54,40 @@
  * O PCG Hash é "stateless" e extremamente rápido, ideal para gerar ruído branco em GPU/CPU paralela.
  *
  * ======================================================================================
+ * 8. FLUXO DE EXECUÇÃO E JUSTIFICATIVA ARQUITETURAL (PIPELINE)
+ * ======================================================================================
+ * * Como essas técnicas se conectam para formar a imagem final:
+ *
+ * PASSO A: GERAÇÃO (Main Loop)
+ * - O `main.cpp` varre cada pixel. Para evitar padrões visuais repetitivos, usamos o
+ * `PCG Hash` (Técnica 7) para gerar uma semente única por pixel/frame.
+ * - Isso alimenta a `Integração de Monte Carlo` (Técnica 1), permitindo que a imagem convirja
+ * progressivamente de "ruidosa" para "limpa".
+ *
+ * PASSO B: TRAVESSIA (Intersection)
+ * - O raio gerado precisa encontrar a geometria. Sem otimização, testaríamos milhões de triângulos.
+ * - A `BVH` (Técnica 2) entra aqui: reduzimos o teste para algumas dezenas de caixas.
+ * - Ao atingir um triângulo, usamos coordenadas baricêntricas para interpolar a `Texturização` (Técnica 6),
+ * garantindo que a cor (albedo) esteja no espaço linear correto para os cálculos de física.
+ *
+ * PASSO C: ILUMINAÇÃO (Shading)
+ * - Ao bater em um ponto, temos duas fontes de luz possíveis:
+ * 1. Luz Direta: Usamos `NEE` (Técnica 3) para conectar o ponto diretamente à lâmpada. Isso
+ * resolve as sombras duras e a iluminação principal instantaneamente.
+ * 2. Luz Indireta: O raio "rebate" aleatoriamente (Monte Carlo) para capturar cores de paredes
+ * vizinhas (Color Bleeding).
+ *
+ * PASSO D: TERMINAÇÃO E OTIMIZAÇÃO
+ * - Para evitar que o raio rebata para sempre (loop infinito) ou termine cedo demais (imagem escura),
+ * usamos a `Russian Roulette` (Técnica 4). Ela mata raios que contribuem pouco para a imagem
+ * de forma estatisticamente justa.
+ *
+ * PASSO E: EXIBIÇÃO (Post-Processing)
+ * - O resultado acumulado é um valor HDR (High Dynamic Range), ex: (R=50.0, G=20.0, B=10.0).
+ * - O monitor não exibe 50.0. Usamos o `ACES Tone Mapping` (Técnica 5) para converter isso
+ * elegantemente para o intervalo 0.0-1.0, preservando detalhes nas áreas estouradas de luz.
+ *
+ * ======================================================================================
  */
 
 #include <iostream>
@@ -110,7 +144,7 @@ struct Vec3 {
     // Produto Vetorial
     Vec3 cross(const Vec3& b) const { return Vec3(y * b.z - z * b.y, z * b.x - x * b.z, x * b.y - y * b.x); }
 
-    // Retorna o comprimento (magnitude) do vetor.
+    // Magnitude
     double length() const { return std::sqrt(x*x + y*y + z*z); }
     // Acesso estilo array v[0], v[1], v[2] para loops genéricos.
     double operator[](int i) const { return (&x)[i]; }
