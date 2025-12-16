@@ -1,3 +1,29 @@
+/*
+ * ======================================================================================
+ * MAIN.CPP - ARQUITETURA E PONTO DE ENTRADA
+ * ======================================================================================
+ *
+ * Este arquivo atua como o "Orquestrador" da aplicação. Ele implementa um padrão
+ * arquitetural híbrido que gerencia dois pipelines de renderização distintos:
+ *
+ * 1. PIPELINE DE RASTERIZAÇÃO (OpenGL Padrão):
+ * - Uso: Visualização em tempo real, edição de malha, feedback imediato (60 FPS).
+ * - Técnica: Projeção de geometria 3D em plano 2D usando a GPU (Graphics Pipeline).
+ *
+ * 2. PIPELINE DE RAY TRACING (Path Tracer via CPU):
+ * - Uso: Renderização fotorealista fisicamente baseada (PBR).
+ * - Técnica: Integração de Monte Carlo acumulativa via CPU, exibida na tela
+ * através de uma textura OpenGL (Full-Screen Quad).
+ *
+ * RESPONSABILIDADES DESTE ARQUIVO:
+ * - Inicialização do Contexto Gráfico (GLUT/GLEW).
+ * - Gerenciamento de Janela e Input (Redirecionando para controls.cpp).
+ * - Carregamento e Normalização de Dados (File I/O + Pré-processamento de Malha).
+ * - Loop Principal de Renderização (Display Loop).
+ *
+ * ======================================================================================
+ */
+
 #include <iostream>
 #include <string>
 #include <vector>
@@ -8,9 +34,9 @@
 #include "performance.h"
 #include "performance-no-prep.h"
 #include "../render/PathTracer.h"
-
 #include "../render/render.h"
 #include "../render/controls.h"
+
 #include <GL/glew.h>
 #ifdef __APPLE__
 #include <GLUT/glut.h>
@@ -22,20 +48,26 @@
 // VARIÁVEIS GLOBAIS DE CONTROLE (PATH TRACING INTERATIVO)
 // ---------------------------------------------------------
 
+// Ponteiro para a cena otimizada (BVH) usada pelo Path Tracer.
+// É separada da malha de edição (g_object) para garantir acesso thread-safe e rápido.
 SceneData* g_renderMesh = nullptr;
 
-bool g_pathTracingMode = false;           // Flag: Ativa/Desativa o modo
-int g_ptSamples = 0;                      // Contador: Quantas amostras já acumulamos
-GLuint g_ptTexture = 0;                   // OpenGL: ID da textura onde desenhamos os pixels
-std::vector<Vec3> g_accumBuffer;          // CPU: Buffer de alta precisão (float) para somar luz
-std::vector<unsigned char> g_pixelBuffer; // CPU: Buffer de bytes (0-255) para mandar pra tela
+bool g_pathTracingMode = false;           // Flag de Estado: Alterna entre OpenGL e Path Tracing
+int g_ptSamples = 0;                      // Acumulador: Número de quadros (samples) já calculados para a média
+GLuint g_ptTexture = 0;                   // Handle OpenGL: Textura onde escrevemos o resultado do Ray Tracing
 
-// Dimensões da janela para o buffer de renderização
+// Buffers de Imagem (Framebuffers de Software):
+// g_accumBuffer: Armazena cores em ponto flutuante (HDR). Permite valores > 1.0 e soma precisa.
+std::vector<Vec3> g_accumBuffer;
+// g_pixelBuffer: Armazena o resultado final em bytes (LDR 0-255) para envio à GPU.
+std::vector<unsigned char> g_pixelBuffer;
+
+// Dimensões da janela (Viewport)
 int g_winWidth = 800;
 int g_winHeight = 600;
 
-// Armazenamento global da geometria para o Path Tracer acessar
-// (Necessário pois o g_object encapsula isso e precisamos dos dados brutos na função de render)
+// Armazenamento intermediário da geometria crua.
+// Necessário porque g_object encapsula os dados, e o Path Tracer precisa de acesso direto (raw access).
 std::vector<Vec3> g_ptVertices;
 std::vector<std::vector<unsigned int>> g_ptFaces;
 
@@ -43,64 +75,78 @@ std::vector<std::vector<unsigned int>> g_ptFaces;
 // VARIÁVEIS GLOBAIS DO MODO GRÁFICO (RASTERIZAÇÃO PADRÃO)
 // ---------------------------------------------------------
 
-object::Object* g_object = nullptr;
-float g_rotation_x = 0.0f;
-float g_rotation_y = 0.0f;
-float g_offset_x = 0.0f;
-float g_offset_y = 0.0f;
-float g_zoom = 1.0f;
-bool g_vertex_only_mode = false;
-bool g_face_only_mode = false;
+object::Object* g_object = nullptr; // A instância principal do objeto sendo editado
+float g_rotation_x = 0.0f;          // Ângulo de Euler X (Pitch)
+float g_rotation_y = 0.0f;          // Ângulo de Euler Y (Yaw)
+float g_offset_x = 0.0f;            // Pan X (Translação da câmera)
+float g_offset_y = 0.0f;            // Pan Y
+float g_zoom = 1.0f;                // Fator de escala da visualização
+bool g_vertex_only_mode = false;    // Flag de visualização: Apenas vértices (nuvem de pontos)
+bool g_face_only_mode = false;      // Flag de visualização: Apenas faces (sem wireframe)
 
+// ---------------------------------------------------------
+// INICIALIZAÇÃO DE RECURSOS DO PATH TRACER
+// ---------------------------------------------------------
 void initPathTracingTexture(int w, int h) {
     g_winWidth = w;
     g_winHeight = h;
 
-    // Redimensiona buffers da CPU
+    // Redimensiona os buffers da CPU para coincidir com a resolução da janela.
+    // Limpa com preto (0,0,0) para iniciar uma nova renderização.
     g_accumBuffer.resize(w * h, Vec3(0,0,0));
-    g_pixelBuffer.resize(w * h * 3, 0);
-    g_ptSamples = 0;
+    g_pixelBuffer.resize(w * h * 3, 0); // 3 canais (R, G, B)
+    g_ptSamples = 0; // Reseta o contador de convergência
 
-    // Configura textura na GPU
-    if (g_ptTexture == 0) glGenTextures(1, &g_ptTexture);
+    // Configura a textura na GPU (OpenGL)
+    if (g_ptTexture == 0) glGenTextures(1, &g_ptTexture); // Gera ID apenas se não existir
     glBindTexture(GL_TEXTURE_2D, g_ptTexture);
 
-    // Filtros NEAREST para ver os pixels exatos (bom para debugar path tracing)
+    // Configura filtros de amostragem.
+    // GL_NEAREST é usado aqui para vermos cada pixel do Ray Tracer com nitidez ("pixel perfect"),
+    // útil para depurar ruído e convergência. GL_LINEAR borraria o resultado.
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    // Aloca a memória na GPU
+    // Aloca a memória na VRAM da GPU (inicialmente vazia/nullptr)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
 }
 
 // ---------------------------------------------------------
-// ATUALIZAÇÃO DO FRAME (PATH TRACING)
+// ATUALIZAÇÃO DO FRAME (PATH TRACING LOOP)
 // ---------------------------------------------------------
+// Esta função é chamada a cada frame quando o modo 'P' está ativo.
+// Ela dispara raios, acumula luz e atualiza a textura.
 void updatePathTracingFrame() {
-    // Se não houver dados de cena (criados no controls.cpp), não faz nada
     if (!g_renderMesh) return;
 
-    // --- 1. Detecção de Movimento (Reset) ---
+    // --- 1. Detecção de Movimento ---
     static float last_rot_x = 0.0f;
     static float last_rot_y = 0.0f;
     static float last_zoom = 0.0f;
     static float last_off_x = 0.0f;
     static float last_off_y = 0.0f;
 
-    // Se a câmera mexeu, a imagem acumulada antiga é inválida. Resetamos.
+    bool isMoving = false;
+
+    // Verifica se houve mudança na câmera
     if (last_rot_x != g_rotation_x || last_rot_y != g_rotation_y ||
         last_zoom != g_zoom || last_off_x != g_offset_x || last_off_y != g_offset_y) {
 
-        g_ptSamples = 0; // Reinicia contador
-        std::fill(g_accumBuffer.begin(), g_accumBuffer.end(), Vec3(0,0,0)); // Limpa tela (preto)
+        isMoving = true;
+        g_ptSamples = 0; // Reinicia o acumulador
+        std::fill(g_accumBuffer.begin(), g_accumBuffer.end(), Vec3(0,0,0));
 
-        // Atualiza estado
         last_rot_x = g_rotation_x; last_rot_y = g_rotation_y;
         last_zoom = g_zoom;
         last_off_x = g_offset_x; last_off_y = g_offset_y;
     }
 
-    // --- 2. Cálculo da Câmera (Orbit) ---
+    // --- 2. Resolução Dinâmica (OTIMIZAÇÃO CRÍTICA) ---
+    // Se estiver movendo (ou nos primeiros frames), reduz a resolução.
+    // step = 1 (Qualidade Máxima), step = 4 ou 6 (Rápido/Pixelado)
+    int step = (g_ptSamples < 4) ? 6 : 1;
+
+    // --- 3. Cálculo da Câmera ---
     float radX = g_rotation_x * 0.0174533f;
     float radY = g_rotation_y * 0.0174533f;
     float dist = 4.0f / (g_zoom > 0.1f ? g_zoom : 0.1f);
@@ -108,8 +154,7 @@ void updatePathTracingFrame() {
     float camX = sin(radY) * cos(radX) * dist;
     float camY = -sin(radX) * dist;
     float camZ = cos(radY) * cos(radX) * dist;
-    camX -= g_offset_x;
-    camY -= g_offset_y;
+    camX -= g_offset_x; camY -= g_offset_y;
 
     Vec3 origin(camX, camY, camZ);
     Vec3 target(-g_offset_x, -g_offset_y, 0);
@@ -122,43 +167,65 @@ void updatePathTracingFrame() {
 
     double aspect = (double)g_winWidth / (double)g_winHeight;
     Vec3 cx = right * 0.5135 * aspect;
-    Vec3 cy = up * -0.5135; // Invertido para corrigir orientação Y
+    Vec3 cy = up * -0.5135;
 
-    // --- 3. Renderização (Multi-Thread) ---
     g_ptSamples++;
 
-    #pragma omp parallel for schedule(dynamic, 1)
-    for (int y = 0; y < g_winHeight; y++) {
-        // Semente aleatória única por pixel/frame para o Monte Carlo
+    // --- 4. Render Loop com Salto de Pixels ---
+    // O loop pula 'step' pixels para ganhar velocidade
+    #pragma omp parallel for schedule(dynamic, 2)
+    for (int y = 0; y < g_winHeight; y += step) {
+
         uint32_t seed = (y * 91214) + (g_ptSamples * 71932);
 
-        for (int x = 0; x < g_winWidth; x++) {
+        for (int x = 0; x < g_winWidth; x += step) {
             int i = (g_winHeight - 1 - y) * g_winWidth + x;
 
-            // Anti-Aliasing (Tent Filter)
-            float r1 = 2.0f * random_float(seed);
-            float r2 = 2.0f * random_float(seed);
-            float dx = (r1 < 1.0f) ? sqrt(r1) - 1.0f : 1.0f - sqrt(2.0f - r1);
-            float dy = (r2 < 1.0f) ? sqrt(r2) - 1.0f : 1.0f - sqrt(2.0f - r2);
+            // Se for modo rápido (step > 1), não fazemos anti-aliasing jittering
+            float dx = 0, dy = 0;
+            if (step == 1) {
+                float r1 = 2.0f * random_float(seed);
+                float r2 = 2.0f * random_float(seed);
+                dx = (r1 < 1.0f) ? sqrt(r1) - 1.0f : 1.0f - sqrt(2.0f - r1);
+                dy = (r2 < 1.0f) ? sqrt(r2) - 1.0f : 1.0f - sqrt(2.0f - r2);
+            }
 
             Vec3 d = cx * (((x + dx) / g_winWidth) - 0.5) * 2.0 +
                      cy * (((y + dy) / g_winHeight) - 0.5) * 2.0 + cam.d;
 
-            // [CRÍTICO] Chama radiance passando a semente.
-            // A textura é processada automaticamente lá dentro via g_renderMesh->textures
-            g_accumBuffer[i] = g_accumBuffer[i] + radiance(Ray(cam.o, d.norm()), seed);
+            Vec3 rayColor = radiance(Ray(cam.o, d.norm()), seed);
 
-            // Média e Tone Mapping
+            // Acumula
+            if (step == 1) {
+                g_accumBuffer[i] = g_accumBuffer[i] + rayColor;
+            } else {
+                // No modo rápido, não acumulamos, apenas sobrescrevemos para feedback instantâneo
+                g_accumBuffer[i] = rayColor * g_ptSamples;
+            }
+
             Vec3 color = g_accumBuffer[i] * (1.0 / g_ptSamples);
 
-            // Grava no buffer de exibição
-            g_pixelBuffer[i * 3 + 0] = toInt(color.x);
-            g_pixelBuffer[i * 3 + 1] = toInt(color.y);
-            g_pixelBuffer[i * 3 + 2] = toInt(color.z);
+            // Converte cor
+            unsigned char r = toInt(color.x);
+            unsigned char g = toInt(color.y);
+            unsigned char b = toInt(color.z);
+
+            // PREENCHIMENTO DE BLOCO (Pixelation Effect)
+            // Se step > 1, preenchemos o bloco vizinho com a mesma cor para não ficar tela preta
+            for (int by = 0; by < step; ++by) {
+                if (y + by >= g_winHeight) break;
+                for (int bx = 0; bx < step; ++bx) {
+                    if (x + bx >= g_winWidth) break;
+
+                    int blockIndex = ((g_winHeight - 1 - (y + by)) * g_winWidth + (x + bx)) * 3;
+                    g_pixelBuffer[blockIndex + 0] = r;
+                    g_pixelBuffer[blockIndex + 1] = g;
+                    g_pixelBuffer[blockIndex + 2] = b;
+                }
+            }
         }
     }
 
-    // Envia textura para a GPU
     glBindTexture(GL_TEXTURE_2D, g_ptTexture);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, g_winWidth, g_winHeight, GL_RGB, GL_UNSIGNED_BYTE, g_pixelBuffer.data());
 }
@@ -166,25 +233,33 @@ void updatePathTracingFrame() {
 // ---------------------------------------------------------
 // CALLBACK DE DESENHO (DISPLAY)
 // ---------------------------------------------------------
+// Função chamada pelo GLUT sempre que a janela precisa ser redesenhada (geralmente 60 FPS).
 void displayCallback() {
-    // Limpa a tela e o buffer de profundidade a cada quadro
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+    // Limpa o fundo e o buffer de profundidade (Z-Buffer)
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f); // Fundo Branco
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    // Verifica qual modo de renderização está ativo
     if (g_pathTracingMode) {
         // ====================================================
-        // MODO PATH TRACING (Renderização Progressiva)
+        // MODO PATH TRACING (Renderização via CPU + Textura GPU)
         // ====================================================
+
+        // 1. Calcula o próximo passo da renderização física
         updatePathTracingFrame();
 
-        // Desenha o Quad com a textura do Ray Tracing
+        // 2. Prepara OpenGL para desenhar em 2D (Overlay)
+        // Salva e reseta as matrizes para garantir coordenadas ortogonais
         glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
         glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
 
+        // Desabilita teste de profundidade (queremos desenhar por cima de tudo)
         glDisable(GL_DEPTH_TEST);
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, g_ptTexture);
 
+        // 3. Desenha um Quadrado (Quad) que cobre a tela inteira
+        // Mapeia a textura gerada pelo Path Tracer neste quadrado.
         glColor3f(1, 1, 1);
         glBegin(GL_QUADS);
             glTexCoord2f(0, 0); glVertex2f(-1, -1);
@@ -193,38 +268,44 @@ void displayCallback() {
             glTexCoord2f(0, 1); glVertex2f(-1,  1);
         glEnd();
 
+        // 4. Restaura estado original
         glDisable(GL_TEXTURE_2D);
         glEnable(GL_DEPTH_TEST);
 
-        glPopMatrix();
+        glPopMatrix(); // Restaura ModelView
         glMatrixMode(GL_PROJECTION);
-        glPopMatrix();
+        glPopMatrix(); // Restaura Projection
         glMatrixMode(GL_MODELVIEW);
 
-        glutSwapBuffers();
+        glutSwapBuffers(); // Troca os buffers (Double Buffering)
+
+        // Solicita redesenho imediato para continuar o loop de refinamento da imagem
         glutPostRedisplay();
 
     } else {
         // ====================================================
-        // MODO RASTERIZAÇÃO PADRÃO (OpenGL)
+        // MODO RASTERIZAÇÃO PADRÃO (OpenGL Tradicional)
         // ====================================================
         glPushMatrix();
-            // Transformações de câmera
+            // Aplica transformações da câmera (View Matrix)
             glTranslatef(g_offset_x, g_offset_y, 0.0f);
             glScalef(g_zoom, g_zoom, g_zoom);
             glRotatef(g_rotation_x, 1.0f, 0.0f, 0.0f);
             glRotatef(g_rotation_y, 0.0f, 1.0f, 0.0f);
 
+            // Definição de cores básicas para o renderizador
             render::ColorsMap colors;
-            colors["surface"] = {0.8f, 0.8f, 0.8f};
-            colors["edge"]    = {0.0f, 0.0f, 0.0f};
-            colors["vertex"]  = {0.0f, 0.0f, 0.0f};
+            colors["surface"] = {0.8f, 0.8f, 0.8f}; // Cor padrão das faces
+            colors["edge"]    = {0.0f, 0.0f, 0.0f}; // Cor das arestas
+            colors["vertex"]  = {0.0f, 0.0f, 0.0f}; // Cor dos vértices
 
             if (g_object) {
-                // Desenha a malha base (respeita os modos vertex/face only internamente)
+                // Desenha a geometria base (Vertices, Arestas, Faces sólidas)
                 g_object->draw(colors, g_vertex_only_mode, g_face_only_mode);
 
-                // [CORREÇÃO] Só desenha as texturas se NÃO estiver no modo "Apenas Vértices"
+                // Desenha a camada de texturas por cima da malha
+                // [IMPORTANTE] Só desenha se NÃO estiver no modo "Apenas Vértices"
+                // para respeitar a visualização de nuvem de pontos.
                 if (!g_vertex_only_mode) {
                     g_object->drawTexturedFaces();
                 }
@@ -235,27 +316,33 @@ void displayCallback() {
     }
 }
 
+// Callback chamado quando a janela é redimensionada
 void reshapeCallback(int width, int height) {
+    // Atualiza o Viewport e a Matriz de Projeção
     render::setup_opengl(width, height);
 }
 
+// Callback chamado quando o sistema está ocioso (Idle)
 void idleCallback() {
+    // Processa input contínuo (ex: segurar tecla para girar)
     controls::updateRotation(g_rotation_x, g_rotation_y);
     controls::updateNavigation(g_offset_x, g_offset_y);
     glutPostRedisplay();
 }
 
+// ---------------------------------------------------------
+// APLICAÇÃO GRÁFICA INTERATIVA (MODO 1)
+// ---------------------------------------------------------
 void runGraphicalApp(int argc, char** argv) {
-    // -------------------------------------------------
-    // 1. Inicialização Padrão (GLUT/GLEW)
-    // -------------------------------------------------
+    // 1. Inicialização do GLUT (Janela e Contexto)
     glutInit(&argc, argv);
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH); // Buffer Duplo, RGB e Z-Buffer
     int winWidth = 800, winHeight = 600;
     glutInitWindowSize(winWidth, winHeight);
     glutCreateWindow("Visualizador de Malha - OpenGL");
-    glutSetKeyRepeat(GLUT_KEY_REPEAT_ON);
+    glutSetKeyRepeat(GLUT_KEY_REPEAT_ON); // Permite repetição de tecla (segurar)
 
+    // Inicialização do GLEW (Apenas Windows/Linux)
 #ifndef __APPLE__
     GLenum err = glewInit();
     if (GLEW_OK != err) {
@@ -264,24 +351,22 @@ void runGraphicalApp(int argc, char** argv) {
     }
 #endif
 
+    // Configura estado inicial do OpenGL (Cor de fundo, Luzes, etc.)
     render::setup_opengl(winWidth, winHeight);
 
-    // -------------------------------------------------
-    // 2. Carregamento do Arquivo
-    // -------------------------------------------------
-    // Detection size pequeno para garantir precisão no clique
-    int detection_size = 5;
-    std::string filename = "../assets/modelo-planta.obj"; // Ajuste conforme necessário
+    // 2. Carregamento do Arquivo 3D
+    int detection_size = 5; // Tolerância para clique do mouse (picking)
+    std::string filename = "../assets/indoor_plant_02.obj";
 
     fileio::MeshData mesh;
     try {
-        mesh = fileio::read_file(filename);
+        mesh = fileio::read_file(filename); // Parse do arquivo
     } catch (const std::exception& e) {
         std::cerr << "Erro ao carregar o arquivo: " << e.what() << std::endl;
         exit(EXIT_FAILURE);
     }
 
-    // Copia vértices para vetor local
+    // Converte formato da struct de IO para vetor local
     std::vector<std::array<float, 3>> vertices;
     for (const auto& v : mesh.vertices) {
         vertices.push_back({
@@ -291,10 +376,9 @@ void runGraphicalApp(int argc, char** argv) {
         });
     }
 
-    // -------------------------------------------------
-    // 3. Normalização e Escala (FIX do Zoom)
-    // -------------------------------------------------
-    // Calcula Bounding Box
+    // 3. Normalização e Escala (Passo Crítico)
+    // Calcula o Bounding Box (Caixa envolvente) para centralizar e escalar o objeto.
+    // Isso é vital para garantir que a câmera e o Path Tracer funcionem com valores numéricos estáveis.
     float minX = vertices[0][0], maxX = vertices[0][0];
     float minY = vertices[0][1], maxY = vertices[0][1];
     float minZ = vertices[0][2], maxZ = vertices[0][2];
@@ -313,21 +397,19 @@ void runGraphicalApp(int argc, char** argv) {
     float depth = maxZ - minZ;
     float maxDimension = std::max(std::max(width, height), depth);
 
-    // Fator de escala para normalizar o objeto para tamanho ~2.0
+    // Escala para caber em um cubo de tamanho 2.0
     float scaleFactor = 2.0f / (maxDimension > 0 ? maxDimension : 1.0f);
 
-    // [IMPORTANTE] Aplica a escala DIRETAMENTE nos vértices locais.
-    // Isso conserta o zoom "blocado" em cenas grandes como Cornell Box.
+    // Aplica a transformação diretamente nos vértices (Baking)
     for (auto &v : vertices) {
         v[0] = (v[0] - centerX) * scaleFactor;
         v[1] = (v[1] - centerY) * scaleFactor;
         v[2] = (v[2] - centerZ) * scaleFactor;
     }
 
-    // Reseta o zoom visual do OpenGL para neutro (1.0)
-    g_zoom = 1.0f;
+    g_zoom = 1.0f; // Reseta zoom da câmera
 
-    // Copia faces
+    // Prepara topologia (Faces)
     std::vector<std::vector<unsigned int>> faces;
     for (const auto& face : mesh.faces) {
         std::vector<unsigned int> f;
@@ -336,47 +418,32 @@ void runGraphicalApp(int argc, char** argv) {
         faces.push_back(f);
     }
 
-    // -------------------------------------------------
-    // 4. Preparação dos Grupos (Face Cells)
-    // -------------------------------------------------
-    // [IMPORTANTE] Copia os IDs de grupo lidos do arquivo (ex: usemtl)
-    // Isso permite que o SHIFT+A selecione objetos lógicos inteiros.
+    // 4. Preparação de Grupos (Face Cells)
+    // Copia IDs de grupo (ex: 'g' ou 'usemtl' do OBJ) para permitir seleção lógica.
     std::vector<unsigned int> face_cells;
-
     if (!mesh.faceCells.empty()) {
         for (int id : mesh.faceCells) {
-            // Converte int para unsigned int.
-            // Se id for -1 (sem grupo), vira 0xFFFFFFFF (Max Uint)
             face_cells.push_back(static_cast<unsigned int>(id));
         }
     } else {
-        // Fallback: Se o arquivo não tinha info de grupo, preenche com valor padrão
+        // Se não houver grupos, preenche com valor sentinela (Max UINT)
         face_cells.resize(faces.size(), 0xFFFFFFFF);
     }
 
-    // ==============================================================
-    // PREPARAÇÃO DADOS PATH TRACER
-    // ==============================================================
+    // Prepara dados globais para o Path Tracer
     g_ptVertices.clear();
     g_ptFaces.clear();
-
-    // Como os vértices JÁ estão escalados, apenas copiamos para o renderizador
     for (const auto& v : vertices) {
         g_ptVertices.push_back(Vec3(v[0], v[1], v[2]));
     }
     g_ptFaces = faces;
-    // ==============================================================
 
-    // -------------------------------------------------
-    // 5. Criação do Objeto Gráfico
-    // -------------------------------------------------
+    // 5. Instanciação do Objeto "Deus" (God Object)
     std::array<float, 3> position = { 0.0f, 0.0f, 0.0f };
-
-    // Passamos os 'vertices' normalizados e 'face_cells' preenchido corretamente
     g_object = new object::Object(position, vertices, faces, face_cells, filename, detection_size, true);
-    g_object->clearColors();
+    g_object->clearColors(); // Reseta para cor padrão (Cinza Claro)
 
-    // Registra os callbacks do GLUT
+    // Registra Callbacks
     glutDisplayFunc(displayCallback);
     glutReshapeFunc(reshapeCallback);
     glutKeyboardFunc(controls::keyboardDownCallback);
@@ -386,7 +453,7 @@ void runGraphicalApp(int argc, char** argv) {
     glutIdleFunc(idleCallback);
     glutMouseFunc(controls::mouseCallback);
 
-    // Inicia o loop do GLUT
+    // Entra no Loop Principal
     glutMainLoop();
 
     // Limpeza
@@ -394,9 +461,9 @@ void runGraphicalApp(int argc, char** argv) {
 }
 
 // -----------------------
-// Modo Path Tracing
+// MODO PATH TRACING OFFLINE (MODO 3)
 // -----------------------
-
+// Versão headless/console que gera um arquivo de imagem direto sem interface.
 void runPathTracingMode() {
     std::string filename = "../assets/indoor_plant_02.obj";
     std::cout << "Modo Path Tracing: Carregando " << filename << "..." << std::endl;
