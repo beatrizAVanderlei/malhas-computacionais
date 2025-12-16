@@ -30,16 +30,15 @@
  * * ======================================================================================
  */
 
-#define STB_IMAGE_IMPLEMENTATION // Define a implementação da lib aqui (single header)
+#define STB_IMAGE_IMPLEMENTATION
 #include "../libs/stb_image.h"
 #include "object.h"
 #include <iostream>
 #include <vector>
 #include <cmath>
 #include <unordered_set>
-#include <algorithm> // std::find
+#include <algorithm>
 
-// Inclusão de Headers Gráficos dependente do SO
 #ifdef __APPLE__
 #include <GLUT/glut.h>
 #else

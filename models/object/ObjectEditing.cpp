@@ -21,14 +21,12 @@
  */
 
 #include "object.h"
-#include "tinyfiledialogs.h" // Biblioteca leve para diálogos nativos (Input Box)
+#include "tinyfiledialogs.h"
 #include <algorithm>
 #include <iostream>
 #include <unordered_set>
 #include <vector>
 #include <cmath>
-
-// Inclusão de bibliotecas gráficas dependente do SO
 #ifdef __APPLE__
 #include <GLUT/glut.h>
 #else

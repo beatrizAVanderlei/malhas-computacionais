@@ -27,7 +27,6 @@
 #include <iostream>
 #include <vector>
 
-// Inclusão de bibliotecas gráficas dependente do SO
 #ifdef __APPLE__
 #include <GLUT/glut.h>
 #else

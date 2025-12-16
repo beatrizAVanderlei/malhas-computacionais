@@ -4,8 +4,6 @@
 #include <set>
 #include <vector>
 
-// Gerenciamento de janelas e contexto OpenGL
-// Mac usa GLUT nativo, Windows/Linux usa FreeGLUT e GLEW para extensões modernas
 #ifdef __APPLE__
 #include <GLUT/glut.h>
 #else
@@ -15,9 +13,9 @@
 
 #include "../models/object/Object.h"
 #include "../models/file_io/file_io.h"
-#include "tinyfiledialogs.h" // Biblioteca leve para abrir janelas de arquivo nativas do SO
+#include "tinyfiledialogs.h"
 #include "../render/PathTracer.h"
-#include <queue> // Usado para o algoritmo BFS (Breadth-First Search) na seleção
+#include <queue>
 
 /*
  * ======================================================================================
