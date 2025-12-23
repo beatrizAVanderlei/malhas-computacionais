@@ -105,9 +105,8 @@
 // Algoritmo PCG Hash (Permuted Congruential Generator).
 // Objetivo: Gerar números pseudo-aleatórios rápidos e de alta qualidade.
 // Parâmetros: 'state' é a semente (seed) que muda a cada chamada para gerar o próximo número.
-inline uint32_t hash_pcg(uint32_t& state) {
+inline uint32_t hash_pcg(uint32_t &state) {
     uint32_t prev = state;
-    // Multiplicador e incremento mágicos para embaralhar os bits
     state = state * 747796405u + 2891336453u;
     // Xorshift e rotação para garantir distribuição uniforme
     uint32_t word = ((prev >> ((prev >> 28u) + 4u)) ^ prev) * 277803737u;
@@ -116,43 +115,46 @@ inline uint32_t hash_pcg(uint32_t& state) {
 
 // Helper para obter um float entre [0.0, 1.0] a partir do hash inteiro.
 // Divide o resultado do hash pelo valor máximo possível de um uint32 (2^32).
-inline float random_float(uint32_t& seed) {
+inline float random_float(uint32_t &seed) {
     return hash_pcg(seed) * (1.0f / 4294967296.0f);
 }
 
 // Estrutura simples para coordenadas de textura 2D (U, V).
-struct PtVec2 { float u, v; };
+struct PtVec2 {
+    float u, v;
+};
 
 // Classe fundamental de Vetor 3D (x, y, z).
 // Usada para Posição, Direção e Cor (R, G, B).
 struct Vec3 {
     double x, y, z;
     // Construtor: Inicializa com valores padrão ou fornecidos.
-    Vec3(double x_ = 0, double y_ = 0, double z_ = 0) : x(x_), y(y_), z(z_) {}
+    Vec3(double x_ = 0, double y_ = 0, double z_ = 0) : x(x_), y(y_), z(z_) {
+    }
 
-    Vec3 operator+(const Vec3& b) const { return Vec3(x + b.x, y + b.y, z + b.z); }
-    Vec3 operator-(const Vec3& b) const { return Vec3(x - b.x, y - b.y, z - b.z); }
+    Vec3 operator+(const Vec3 &b) const { return Vec3(x + b.x, y + b.y, z + b.z); }
+    Vec3 operator-(const Vec3 &b) const { return Vec3(x - b.x, y - b.y, z - b.z); }
     Vec3 operator*(double b) const { return Vec3(x * b, y * b, z * b); }
-    Vec3 operator*(const Vec3& b) const { return Vec3(x * b.x, y * b.y, z * b.z); }
+    Vec3 operator*(const Vec3 &b) const { return Vec3(x * b.x, y * b.y, z * b.z); }
 
     // Normalização
     Vec3 norm() { return *this = *this * (1.0 / std::sqrt(x * x + y * y + z * z)); }
 
     // Produto Escalar
-    double dot(const Vec3& b) const { return x * b.x + y * b.y + z * b.z; }
+    double dot(const Vec3 &b) const { return x * b.x + y * b.y + z * b.z; }
 
     // Produto Vetorial
-    Vec3 cross(const Vec3& b) const { return Vec3(y * b.z - z * b.y, z * b.x - x * b.z, x * b.y - y * b.x); }
+    Vec3 cross(const Vec3 &b) const { return Vec3(y * b.z - z * b.y, z * b.x - x * b.z, x * b.y - y * b.x); }
 
     // Magnitude
-    double length() const { return std::sqrt(x*x + y*y + z*z); }
+    double length() const { return std::sqrt(x * x + y * y + z * z); }
     // Acesso estilo array v[0], v[1], v[2] para loops genéricos.
     double operator[](int i) const { return (&x)[i]; }
 };
 
 // Gera um vetor unitário aleatório uniformemente distribuído na superfície de uma esfera.
 // Usado para simular reflexão difusa (espalha a luz em todas as direções) e amostragem de luz de área.
-inline Vec3 randomUnitVector(uint32_t& seed) {
+inline Vec3 randomUnitVector(uint32_t &seed) {
     double z = random_float(seed) * 2.0 - 1.0; // Z aleatório entre -1 e 1
     double a = random_float(seed) * 2.0 * 3.1415926; // Ângulo aleatório (0 a 2*PI)
     double r = std::sqrt(1.0 - z * z); // Raio no plano XY
@@ -163,9 +165,10 @@ inline Vec3 randomUnitVector(uint32_t& seed) {
 // Um raio é definido por uma Origem (o) e uma Direção (d).
 struct Ray {
     Vec3 o, d, inv_d;
+
     Ray(Vec3 o_, Vec3 d_) : o(o_), d(d_) {
         // Pré-calcula o inverso da direção (1/d).
-        // Isso acelera muito a interseção Raio-AABB (Slab Method), trocando divisões por multiplicações.
+        // Acelera a interseção Raio-AABB (Slab Method), trocando divisões por multiplicações.
         // Adiciona um epsilon (1e-8) para evitar divisão por zero se o raio for paralelo a um eixo.
         inv_d = Vec3(1.0 / (std::abs(d.x) > 1e-8 ? d.x : 1e-8),
                      1.0 / (std::abs(d.y) > 1e-8 ? d.y : 1e-8),
@@ -174,7 +177,6 @@ struct Ray {
 };
 
 // Armazena dados de textura em memória.
-// Usa 'float' para guardar cores lineares (pós-gama) e permitir interpolação suave.
 struct TextureData {
     int width, height;
     std::vector<float> pixels;
@@ -190,26 +192,39 @@ struct TextureData {
 struct AABB {
     Vec3 min, max;
     // Inicializa com "infinito invertido" para garantir que o primeiro ponto expanda a caixa corretamente.
-    AABB() { double inf = 1e20; min = Vec3(inf, inf, inf); max = Vec3(-inf, -inf, -inf); }
+    AABB() {
+        double inf = 1e20;
+        min = Vec3(inf, inf, inf);
+        max = Vec3(-inf, -inf, -inf);
+    }
 
     // Expande a caixa para incluir o ponto p.
-    void expand(const Vec3& p) {
-        min.x = std::min(min.x, p.x); min.y = std::min(min.y, p.y); min.z = std::min(min.z, p.z);
-        max.x = std::max(max.x, p.x); max.y = std::max(max.y, p.y); max.z = std::max(max.z, p.z);
+    void expand(const Vec3 &p) {
+        min.x = std::min(min.x, p.x);
+        min.y = std::min(min.y, p.y);
+        min.z = std::min(min.z, p.z);
+        max.x = std::max(max.x, p.x);
+        max.y = std::max(max.y, p.y);
+        max.z = std::max(max.z, p.z);
     }
 
     // Teste de interseção Raio vs Caixa (Slab Method).
     // Verifica se o raio entra e sai da caixa em intervalos consistentes nos eixos X, Y e Z.
     // Retorna true se houver sobreposição válida dentro da distância t_max.
-    inline bool intersect(const Ray& r, double t_max) const {
-        double t1 = (min.x - r.o.x) * r.inv_d.x; double t2 = (max.x - r.o.x) * r.inv_d.x;
+    inline bool intersect(const Ray &r, double t_max) const {
+        double t1 = (min.x - r.o.x) * r.inv_d.x;
+        double t2 = (max.x - r.o.x) * r.inv_d.x;
         double tmin = std::min(t1, t2), tmax = std::max(t1, t2); // Intervalo no eixo X
 
-        t1 = (min.y - r.o.y) * r.inv_d.y; t2 = (max.y - r.o.y) * r.inv_d.y;
-        tmin = std::max(tmin, std::min(t1, t2)); tmax = std::min(tmax, std::max(t1, t2)); // Intersecção com Y
+        t1 = (min.y - r.o.y) * r.inv_d.y;
+        t2 = (max.y - r.o.y) * r.inv_d.y;
+        tmin = std::max(tmin, std::min(t1, t2));
+        tmax = std::min(tmax, std::max(t1, t2)); // Intersecção com Y
 
-        t1 = (min.z - r.o.z) * r.inv_d.z; t2 = (max.z - r.o.z) * r.inv_d.z;
-        tmin = std::max(tmin, std::min(t1, t2)); tmax = std::min(tmax, std::max(t1, t2)); // Intersecção com Z
+        t1 = (min.z - r.o.z) * r.inv_d.z;
+        t2 = (max.z - r.o.z) * r.inv_d.z;
+        tmin = std::max(tmin, std::min(t1, t2));
+        tmax = std::min(tmax, std::max(t1, t2)); // Intersecção com Z
 
         return tmax >= tmin && tmin < t_max && tmax > 0;
     }
@@ -226,35 +241,41 @@ struct BVHNode {
 // Mantém cópias otimizadas dos dados para acesso rápido e thread-safe.
 struct SceneData {
     std::vector<Vec3> vertices;
-    std::vector<std::vector<unsigned int>> faces;
+    std::vector<std::vector<unsigned int> > faces;
     std::vector<int> triIndices; // Índices reordenados pela BVH para acesso coerente
+    std::vector<int> faceMaterials;
 
     std::vector<TextureData> textures;
     std::vector<int> faceTextureID;
-    std::vector<std::vector<PtVec2>> faceUVs;
+    std::vector<std::vector<PtVec2> > faceUVs;
 
-    BVHNode* bvhRoot = nullptr; // Raiz da árvore de aceleração
+    BVHNode *bvhRoot = nullptr; // Raiz da árvore de aceleração
     ~SceneData() { clearTree(bvhRoot); } // Destrutor limpa a árvore
-    void clearTree(BVHNode* node) { if (!node) return; clearTree(node->left); clearTree(node->right); delete node; }
+    void clearTree(BVHNode *node) {
+        if (!node) return;
+        clearTree(node->left);
+        clearTree(node->right);
+        delete node;
+    }
 };
 
-extern SceneData* g_renderMesh; // Variável global apontando para a cena atual
+extern SceneData *g_renderMesh; // Variável global apontando para a cena atual
 
 // --- Construção da BVH ---
 // Calcula o centro geométrico de um triângulo. Usado para decidir em qual filho da BVH ele vai.
-inline Vec3 getCentroid(const SceneData& scene, int triIdx) {
-    const auto& f = scene.faces[triIdx];
+inline Vec3 getCentroid(const SceneData &scene, int triIdx) {
+    const auto &f = scene.faces[triIdx];
     return (scene.vertices[f[0]] + scene.vertices[f[1]] + scene.vertices[f[2]]) * 0.333333;
 }
 
 // Construtor recursivo da BVH (Top-Down).
-inline BVHNode* buildBVHRecursive(SceneData& scene, int left, int right) {
-    BVHNode* node = new BVHNode();
+inline BVHNode *buildBVHRecursive(SceneData &scene, int left, int right) {
+    BVHNode *node = new BVHNode();
 
     // 1. Calcula a AABB deste nó varrendo todos os triângulos que ele contém
     for (int i = left; i < right; ++i) {
         int idx = scene.triIndices[i];
-        const auto& f = scene.faces[idx];
+        const auto &f = scene.faces[idx];
         node->box.expand(scene.vertices[f[0]]);
         node->box.expand(scene.vertices[f[1]]);
         node->box.expand(scene.vertices[f[2]]);
@@ -262,7 +283,11 @@ inline BVHNode* buildBVHRecursive(SceneData& scene, int left, int right) {
 
     int count = right - left;
     // Critério de parada: Se tiver 2 ou menos triângulos, vira folha.
-    if (count <= 2) { node->firstTriIndex = left; node->triCount = count; return node; }
+    if (count <= 2) {
+        node->firstTriIndex = left;
+        node->triCount = count;
+        return node;
+    }
 
     // 2. Escolhe o maior eixo da caixa para dividir (Heurística espacial simples)
     Vec3 size = node->box.max - node->box.min;
@@ -277,7 +302,7 @@ inline BVHNode* buildBVHRecursive(SceneData& scene, int left, int right) {
     }
 
     // Proteção: Garante que não criamos partições vazias infinitas
-    if (mid == left || mid == right) mid = left + count/2;
+    if (mid == left || mid == right) mid = left + count / 2;
 
     // 4. Recursão para criar filhos
     node->left = buildBVHRecursive(scene, left, mid);
@@ -286,10 +311,10 @@ inline BVHNode* buildBVHRecursive(SceneData& scene, int left, int right) {
 }
 
 // Função de entrada para construir a BVH
-inline void buildBVH(SceneData& scene) {
+inline void buildBVH(SceneData &scene) {
     if (scene.faces.empty()) return;
     scene.triIndices.resize(scene.faces.size());
-    for(size_t i=0; i<scene.faces.size(); ++i) scene.triIndices[i] = i; // Inicializa índices sequenciais
+    for (size_t i = 0; i < scene.faces.size(); ++i) scene.triIndices[i] = i; // Inicializa índices sequenciais
     scene.bvhRoot = buildBVHRecursive(scene, 0, scene.faces.size());
 }
 
@@ -298,9 +323,11 @@ inline void buildBVH(SceneData& scene) {
 // ==========================================
 // Algoritmo rápido para testar interseção Raio vs Triângulo.
 // Retorna a distância 't' e as coordenadas baricêntricas (u, v) para interpolação de textura.
-inline double intersectTriangle(const Ray& r, const Vec3& v0, const Vec3& v1, const Vec3& v2, double& outU, double& outV) {
+inline double intersectTriangle(const Ray &r, const Vec3 &v0, const Vec3 &v1, const Vec3 &v2, double &outU,
+                                double &outV) {
     const double EPS = 1e-6; // Tolerância para erros de ponto flutuante
-    Vec3 e1 = v1 - v0; Vec3 e2 = v2 - v0; // Arestas do triângulo
+    Vec3 e1 = v1 - v0;
+    Vec3 e2 = v2 - v0; // Arestas do triângulo
     Vec3 h = r.d.cross(e2);
     double a = e1.dot(h);
 
@@ -320,32 +347,39 @@ inline double intersectTriangle(const Ray& r, const Vec3& v0, const Vec3& v1, co
 // 5. AMOSTRAGEM DE TEXTURA
 // ==========================================
 // Acesso seguro ao pixel da textura (Clamp to Edge)
-inline Vec3 getPixel(const TextureData& tex, int x, int y) {
+inline Vec3 getPixel(const TextureData &tex, int x, int y) {
     x = std::max(0, std::min(x, tex.width - 1));
     y = std::max(0, std::min(y, tex.height - 1));
     int idx = (y * tex.width + x) * 3;
-    return Vec3(tex.pixels[idx], tex.pixels[idx+1], tex.pixels[idx+2]);
+    return Vec3(tex.pixels[idx], tex.pixels[idx + 1], tex.pixels[idx + 2]);
 }
 
 // Amostragem com Interpolação Bilinear.
 // Lê os 4 pixels vizinhos e mistura suavemente para evitar o aspecto "pixelado" (blocky).
-inline Vec3 sampleTexture(const TextureData& tex, double u, double v) {
+inline Vec3 sampleTexture(const TextureData &tex, double u, double v) {
     if (tex.pixels.empty()) return Vec3(1, 0, 1);
 
     // Tiling: Faz a textura repetir se coordenadas passarem de 1.0
-    u = u - floor(u); v = v - floor(v);
+    u = u - floor(u);
+    v = v - floor(v);
 
     // Coordenadas em espaço de pixel
-    double px = u * tex.width - 0.5; double py = v * tex.height - 0.5;
-    int x0 = (int)std::floor(px); int y0 = (int)std::floor(py);
-    int x1 = x0 + 1; int y1 = y0 + 1;
+    double px = u * tex.width - 0.5;
+    double py = v * tex.height - 0.5;
+    int x0 = (int) std::floor(px);
+    int y0 = (int) std::floor(py);
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
 
     // Pesos para interpolação
-    double dx = px - x0; double dy = py - y0;
+    double dx = px - x0;
+    double dy = py - y0;
 
     // Leitura dos vizinhos
-    Vec3 c00 = getPixel(tex, x0, y0); Vec3 c10 = getPixel(tex, x1, y0);
-    Vec3 c01 = getPixel(tex, x0, y1); Vec3 c11 = getPixel(tex, x1, y1);
+    Vec3 c00 = getPixel(tex, x0, y0);
+    Vec3 c10 = getPixel(tex, x1, y0);
+    Vec3 c01 = getPixel(tex, x0, y1);
+    Vec3 c11 = getPixel(tex, x1, y1);
 
     // Interpolação linear nos dois eixos
     Vec3 top = c00 * (1.0 - dx) + c10 * dx;
@@ -355,37 +389,50 @@ inline Vec3 sampleTexture(const TextureData& tex, double u, double v) {
 
 // Função Principal de Intersecção (Scene Traversal).
 // Percorre a BVH e testa objetos da cena para encontrar a colisão mais próxima.
-inline bool getIntersection(const Ray& r, double& t, int& id, Vec3& normalHit, int& hitFaceIndex, double& hitU, double& hitV) {
-    t = 1e20; id = 0; bool hit = false; // Inicializa com "nada encontrado"
+inline bool getIntersection(const Ray &r, double &t, int &id, Vec3 &normalHit, int &hitFaceIndex, double &hitU,
+                            double &hitV) {
+    t = 1e20;
+    id = 0;
+    bool hit = false; // Inicializa com "nada encontrado"
     hitFaceIndex = -1;
 
     // 1. Testa Malha (BVH)
     if (g_renderMesh && g_renderMesh->bvhRoot) {
-        const BVHNode* stack[64]; // Pilha para evitar recursão lenta
+        const BVHNode *stack[64]; // Pilha para evitar recursão lenta
         int stackPtr = 0;
         stack[stackPtr++] = g_renderMesh->bvhRoot;
 
         while (stackPtr > 0) {
-            const BVHNode* node = stack[--stackPtr];
+            const BVHNode *node = stack[--stackPtr];
 
             // OTIMIZAÇÃO: Se raio não toca a caixa, ignora tudo dentro (Culling)
             if (!node->box.intersect(r, t)) continue;
 
-            if (node->triCount > 0) { // Nó Folha (tem geometria real)
+            if (node->triCount > 0) {
+                // Nó Folha (tem geometria real)
                 for (int i = 0; i < node->triCount; ++i) {
                     int realIdx = g_renderMesh->triIndices[node->firstTriIndex + i];
-                    const auto& face = g_renderMesh->faces[realIdx];
+                    const auto &face = g_renderMesh->faces[realIdx];
                     double u, v;
                     // Teste exato com triângulo
-                    double d = intersectTriangle(r, g_renderMesh->vertices[face[0]], g_renderMesh->vertices[face[1]], g_renderMesh->vertices[face[2]], u, v);
+                    double d = intersectTriangle(r, g_renderMesh->vertices[face[0]], g_renderMesh->vertices[face[1]],
+                                                 g_renderMesh->vertices[face[2]], u, v);
 
-                    if (d > 0 && d < t) { // Se achou colisão mais próxima
-                        t = d; id = 1; hit = true; hitFaceIndex = realIdx; hitU = u; hitV = v;
+                    if (d > 0 && d < t) {
+                        // Se achou colisão mais próxima
+                        t = d;
+                        id = 1;
+                        hit = true;
+                        hitFaceIndex = realIdx;
+                        hitU = u;
+                        hitV = v;
                         // Calcula normal geométrica (Cross product das arestas)
-                        normalHit = (g_renderMesh->vertices[face[1]] - g_renderMesh->vertices[face[0]]).cross(g_renderMesh->vertices[face[2]] - g_renderMesh->vertices[face[0]]).norm();
+                        normalHit = (g_renderMesh->vertices[face[1]] - g_renderMesh->vertices[face[0]]).cross(
+                            g_renderMesh->vertices[face[2]] - g_renderMesh->vertices[face[0]]).norm();
                     }
                 }
-            } else { // Nó Interno: Continua descendo na árvore
+            } else {
+                // Nó Interno: Continua descendo na árvore
                 if (node->right) stack[stackPtr++] = node->right;
                 if (node->left) stack[stackPtr++] = node->left;
             }
@@ -396,7 +443,10 @@ inline bool getIntersection(const Ray& r, double& t, int& id, Vec3& normalHit, i
     if (std::abs(r.d.y) > 1e-6) {
         double t_plane = (-1.2 - r.o.y) * r.inv_d.y;
         if (t_plane > 1e-4 && t_plane < t) {
-            t = t_plane; id = 2; hit = true; normalHit = Vec3(0, 1, 0); // Normal pra cima
+            t = t_plane;
+            id = 2;
+            hit = true;
+            normalHit = Vec3(0, 1, 0); // Normal pra cima
         }
     }
 
@@ -408,7 +458,10 @@ inline bool getIntersection(const Ray& r, double& t, int& id, Vec3& normalHit, i
     if (det > 0) {
         double t_luz = b - std::sqrt(det);
         if (t_luz > 1e-4 && t_luz < t) {
-            t = t_luz; id = 3; hit = true; normalHit = (r.o + r.d * t - L).norm();
+            t = t_luz;
+            id = 3;
+            hit = true;
+            normalHit = (r.o + r.d * t - L).norm();
         }
     }
     return hit;
@@ -417,51 +470,119 @@ inline bool getIntersection(const Ray& r, double& t, int& id, Vec3& normalHit, i
 // ==========================================
 // 6. FUNÇÃO RADIANCE (Cálculo de Luz)
 // ==========================================
-inline Vec3 radiance(Ray r, uint32_t& seed) {
-    Vec3 throughput(1.0, 1.0, 1.0); // Carrega a "cor" do caminho (Albedo acumulado)
-    Vec3 finalColor(0.0, 0.0, 0.0); // Luz total que chega à câmera
+inline Vec3 radiance(Ray r, uint32_t &seed) {
+    Vec3 throughput(1.0, 1.0, 1.0); // Acumulador de cor do caminho (multiplicativo)
+    Vec3 finalColor(0.0, 0.0, 0.0); // Luz total acumulada (aditivo)
 
-    // Configuração da Luz Esférica
+    // --- CONFIGURAÇÃO DA LUZ DA CENA ---
+    // Você pode parametrizar isso externamente se quiser
     Vec3 lightPos(0.0, 0.6, 0.0);
     double lightRadius = 0.04;
-
-    // Intensidade da luz reduzida para 8.0 para evitar estouro (burnout)
-    Vec3 lightEmission(8.0, 8.0, 8.0);
+    Vec3 lightEmission(8.0, 8.0, 8.0); // Intensidade da luz
 
     // Loop de Rebatimento (Bounces)
-    // Simula o caminho do fóton inversamente (Câmera -> Luz)
-    for (int depth = 0; depth < 5; ++depth) {
-        double t; int id; Vec3 n;
-        int hitFaceIdx; double u_bar, v_bar;
+    // Aumentamos para 8 bounces para permitir que a luz atravesse vidros complexos
+    for (int depth = 0; depth < 8; ++depth) {
+        double t;
+        int id;
+        Vec3 n;
+        int hitFaceIdx;
+        double u_bar, v_bar;
 
-        // Se o raio for para o infinito (Céu)
+        // 1. Interseção com a Cena
+        // Se o raio não bater em nada, retorna a cor do céu (luz ambiente)
         if (!getIntersection(r, t, id, n, hitFaceIdx, u_bar, v_bar)) {
-            return finalColor + throughput * Vec3(0.05, 0.05, 0.05); // Luz ambiente fraca
+            return finalColor + throughput * Vec3(0.05, 0.05, 0.05);
         }
 
-        // Se o raio bater na fonte de luz (Lâmpada)
+        // 2. Se bater na Fonte de Luz (ID 3)
         if (id == 3) {
-            // Só adiciona a emissão se for visão direta (depth 0).
-            // Se for luz indireta (depth > 0), o NEE já calculou isso, então ignoramos para não duplicar.
+            // Se for o primeiro raio (visão direta), vemos a luz.
+            // Se for luz indireta (depth > 0), o NEE (Next Event Estimation) já calculou,
+            // então retornamos preto para não duplicar a energia.
             if (depth == 0) return finalColor + throughput * lightEmission;
             else return finalColor;
         }
 
-        // Define propriedades do material (Ponto de impacto)
-        Vec3 f; // Cor da superfície (Albedo)
-        Vec3 x = r.o + r.d * t; // Ponto exato da colisão 3D
-        Vec3 nl = n.dot(r.d) < 0 ? n : n * -1; // Garante que a normal aponte para fora
+        // Dados do ponto de impacto
+        Vec3 x = r.o + r.d * t; // Posição exata no espaço 3D
+        Vec3 nl = n.dot(r.d) < 0 ? n : n * -1; // Normal orientada corretamente (contra o raio)
 
-        if (id == 1) { // Malha 3D
-            f = Vec3(0.7, 0.7, 0.7); // Cor base cinza
+        // Variável para armazenar a cor da superfície (Albedo)
+        Vec3 f;
 
-            // Lógica de Textura
-            if (hitFaceIdx >= 0 && hitFaceIdx < (int)g_renderMesh->faceTextureID.size()) {
+        // ==========================================================
+        // CASO 1: MALHA 3D (Objeto carregado)
+        // ==========================================================
+        if (id == 1) {
+            // A. Identificação do Material
+            int matType = 0; // 0 = Difuso (Padrão)
+            if (hitFaceIdx >= 0 && hitFaceIdx < (int) g_renderMesh->faceMaterials.size()) {
+                matType = g_renderMesh->faceMaterials[hitFaceIdx];
+            }
+
+            // ------------------------------------------------------
+            // TIPO 2: VIDRO / DIELÉTRICO (Refração & Reflexão)
+            // ------------------------------------------------------
+            if (matType == 2) {
+                // Vidro é um material "Especular Perfeito".
+                // O raio bate e toma UM caminho único (reflete OU refrata).
+                // Por isso, não usamos NEE (amostragem de luz) aqui.
+
+                bool into = n.dot(nl) > 0; // O raio está entrando no objeto?
+                double nc = 1.0; // Índice de refração do Ar
+                double nt = 1.5; // Índice de refração do Vidro
+                double nnt = into ? nc / nt : nt / nc;
+                double ddn = r.d.dot(nl);
+
+                // Lei de Snell e Reflexão Interna Total (TIR)
+                // Cos^2(theta_transmission)
+                double cos2t = 1.0 - nnt * nnt * (1.0 - ddn * ddn);
+
+                // Se cos2t < 0, ocorre Reflexão Interna Total (o raio fica preso dentro)
+                if (cos2t < 0.0) {
+                    r = Ray(x, (r.d - n * 2.0 * n.dot(n)).norm());
+                    r.o = r.o + r.d * 1e-4; // Offset para evitar acne
+                    continue; // Pula para o próximo bounce
+                }
+
+                // Cálculo de Fresnel (Aproximação de Schlick)
+                // Calcula a chance de refletir vs refratar baseada no ângulo
+                Vec3 tdir = (r.d * nnt - n * ((into ? 1 : -1) * (ddn * nnt + std::sqrt(cos2t)))).norm();
+                double a = nt - nc, b = nt + nc;
+                double R0 = (a * a) / (b * b);
+                double c = 1.0 - (into ? -ddn : tdir.dot(n));
+                double Re = R0 + (1.0 - R0) * std::pow(c, 5.0); // Probabilidade de refletir
+                double Tr = 1.0 - Re; // Probabilidade de refratar
+
+                // Roleta Russa para escolher o caminho do raio
+                if (random_float(seed) < Re) {
+                    // Escolheu REFLETIR
+                    Vec3 rdir = (r.d - n * 2.0 * n.dot(n)).norm();
+                    r = Ray(x, rdir);
+                    r.o = r.o + r.d * 1e-4;
+                } else {
+                    // Escolheu REFRATAR (Atravessar)
+                    r = Ray(x, tdir);
+                    r.o = r.o + r.d * 1e-4;
+                }
+
+                // O throughput não muda muito no vidro ideal (exceto se tiver cor de absorção)
+                // Continuamos o loop sem processar iluminação difusa
+                continue;
+            }
+
+            // ------------------------------------------------------
+            // TIPO 0: DIFUSO (Padrão) - Executa se NÃO for vidro
+            // ------------------------------------------------------
+            f = Vec3(0.7, 0.7, 0.7); // Cor base padrão
+
+            // Amostragem de Textura
+            if (hitFaceIdx >= 0 && hitFaceIdx < (int) g_renderMesh->faceTextureID.size()) {
                 int texID = g_renderMesh->faceTextureID[hitFaceIdx];
-                if (texID >= 0 && texID < (int)g_renderMesh->textures.size()) {
-                    const auto& uvs = g_renderMesh->faceUVs[hitFaceIdx];
+                if (texID >= 0 && texID < (int) g_renderMesh->textures.size()) {
+                    const auto &uvs = g_renderMesh->faceUVs[hitFaceIdx];
                     if (uvs.size() >= 3) {
-                        // Interpola coordenadas UV usando baricêntricas
                         float interp_u = (1.0 - u_bar - v_bar) * uvs[0].u + u_bar * uvs[1].u + v_bar * uvs[2].u;
                         float interp_v = (1.0 - u_bar - v_bar) * uvs[0].v + u_bar * uvs[1].v + v_bar * uvs[2].v;
                         f = sampleTexture(g_renderMesh->textures[texID], interp_u, interp_v);
@@ -469,86 +590,91 @@ inline Vec3 radiance(Ray r, uint32_t& seed) {
                 }
             }
         }
-        else { // Chão
-            // Padrão procedural xadrez baseado na posição X/Z
+        // ==========================================================
+        // CASO 2: CHÃO (Procedural)
+        // ==========================================================
+        else {
+            // id != 1 && id != 3 (Assumindo id=2 para o chão)
+            // Padrão Xadrez
             bool grid = (int(std::floor(x.x) + std::floor(x.z)) & 1) == 0;
             f = grid ? Vec3(0.8, 0.8, 0.8) : Vec3(0.2, 0.2, 0.2);
         }
 
-        // --- NEXT EVENT ESTIMATION (NEE) ---
-        // Técnica crucial para reduzir ruído. Em vez de esperar bater na luz por sorte,
-        // conectamos explicitamente o ponto de impacto à fonte de luz.
+        // ==========================================================
+        // CÁLCULO DE ILUMINAÇÃO DIFUSA (COMPARTILHADO PELA MALHA E CHÃO)
+        // ==========================================================
+        // Se chegou aqui, a superfície é difusa (Malha ou Chão).
+
+        // --- 1. NEE (Next Event Estimation) / Shadow Rays ---
+        // Conecta o ponto diretamente à luz para criar sombras suaves e reduzir ruído.
         {
             Vec3 directLightSum(0, 0, 0);
-            int shadowSamples = 1; // 1 raio de sombra por bounce (otimização de performance)
+            Vec3 lightSample = lightPos + randomUnitVector(seed) * lightRadius; // Ponto aleatório na luz
+            Vec3 toLight = lightSample - x;
+            double distSq = toLight.dot(toLight);
+            double dist = std::sqrt(distSq);
+            Vec3 L_dir = toLight * (1.0 / dist); // Direção normalizada para a luz
 
-            for(int s=0; s<shadowSamples; ++s) {
-                // Sorteia um ponto na superfície da luz
-                Vec3 lightSample = lightPos + randomUnitVector(seed) * lightRadius;
-                Vec3 toLight = lightSample - x; // Vetor direção para a luz
-                double distSq = toLight.dot(toLight); // Distância ao quadrado
-                double dist = std::sqrt(distSq);
-                Vec3 L_dir = toLight * (1.0 / dist); // Normaliza
+            // Dispara raio de sombra
+            Ray shadowRay(x + nl * 1e-4, L_dir);
+            double t_s;
+            int id_s;
+            Vec3 n_s;
+            int fh_s;
+            double u_s, v_s;
 
-                // Dispara "Raio de Sombra"
-                Ray shadowRay(x + nl * 1e-4, L_dir); // Offset epsilon evita auto-sombra (acne)
-                double t_s; int id_s; Vec3 n_s; int fh_s; double u_s, v_s;
+            bool visible = false;
+            // Verifica se bateu em algo
+            if (getIntersection(shadowRay, t_s, id_s, n_s, fh_s, u_s, v_s)) {
+                // Se bateu na luz (id 3) e está na distância correta (não atravessou a luz)
+                if (id_s == 3 && t_s < dist + 0.1) visible = true;
+            }
 
-                // Verifica visibilidade (Oclusão)
-                bool visible = false;
-                if (getIntersection(shadowRay, t_s, id_s, n_s, fh_s, u_s, v_s)) {
-                    // Se bateu na luz (id 3) e a distância é compatível
-                    if (id_s == 3 && t_s < dist + 0.1) visible = true;
-                }
+            if (visible) {
+                double cosTheta = nl.dot(L_dir);
+                if (cosTheta > 0) {
+                    double area = 4.0 * 3.1415926 * lightRadius * lightRadius;
+                    double geometryTerm = cosTheta * (area / distSq);
+                    // Clamp para evitar fireflies (pontos brancos explosivos)
+                    if (geometryTerm > 10.0) geometryTerm = 10.0;
 
-                if (visible) {
-                    double cosTheta = nl.dot(L_dir); // Ângulo de incidência
-                    if (cosTheta > 0) {
-                        // Cálculo físico da radiância
-                        double area = 4.0 * 3.1415926 * lightRadius * lightRadius;
-                        double geometryTerm = cosTheta * (area / distSq); // Decaimento quadrático da luz
-
-                        // Clamp para evitar pixels brancos explosivos (fireflies)
-                        if (geometryTerm > 10.0) geometryTerm = 10.0;
-
-                        // Soma a luz direta ponderada pela cor da superfície (f)
-                        directLightSum = directLightSum + lightEmission * f * geometryTerm;
-                    }
+                    directLightSum = directLightSum + lightEmission * f * geometryTerm;
                 }
             }
-            // Acumula na cor final
-            finalColor = finalColor + throughput * directLightSum * (1.0 / shadowSamples);
+            // Adiciona a luz direta calculada ao pixel final
+            finalColor = finalColor + throughput * directLightSum;
         }
 
-        // --- ROLETA RUSSA (Russian Roulette) ---
-        // Técnica probabilística para terminar raios sem introduzir viés (bias).
-        // Se a superfície é escura, a chance de absorver o raio é alta.
-        double p = std::max({f.x, f.y, f.z}); // Probabilidade de sobrevivência baseada no brilho
-        if (depth > 2) { // Só ativa após 2 bounces para garantir qualidade mínima
-            if (random_float(seed) < p) f = f * (1.0 / p); // Sobreviveu: Aumenta energia para compensar os mortos
-            else break; // Morreu: Encerra o caminho
+        // --- 2. Roleta Russa (Russian Roulette) ---
+        // Termina caminhos aleatoriamente para evitar loop infinito
+        double p = std::max({f.x, f.y, f.z});
+        if (depth > 2) {
+            if (random_float(seed) < p) f = f * (1.0 / p); // Sobreviveu (aumenta peso)
+            else break; // Morreu (termina)
         }
 
-        // Atualiza o throughput (filtro de cor) para o próximo bounce
+        // Atualiza a cor acumulada do raio
         throughput = throughput * f;
 
-        // --- LUZ INDIRETA (GI) ---
-        // Gera direção aleatória para o próximo raio (Reflexão Difusa)
+        // --- 3. Iluminação Global (GI) / Próximo Bounce ---
+        // Gera um raio aleatório no hemisfério orientado pela normal (Reflexão Difusa)
         double r1 = 2 * 3.14159 * random_float(seed);
         double r2 = random_float(seed);
         double r2s = std::sqrt(r2);
 
-        // Base ortonormal local alinhada à normal
+        // Base ortonormal local
         Vec3 w = nl;
         Vec3 u = ((std::abs(w.x) > 0.1 ? Vec3(0, 1, 0) : Vec3(1, 0, 0)).cross(w)).norm();
         Vec3 v = w.cross(u);
 
-        // Direção final (Cosseno ponderada no hemisfério)
+        // Direção ponderada pelo cosseno
         Vec3 d = (u * std::cos(r1) * r2s + v * std::sin(r1) * r2s + w * std::sqrt(1 - r2)).norm();
 
+        // Prepara raio para a próxima iteração do loop
         r = Ray(x, d);
-        r.o = r.o + r.d * 1e-4; // Offset para evitar auto-interseção
+        r.o = r.o + r.d * 1e-4;
     }
+
     return finalColor;
 }
 
@@ -558,9 +684,14 @@ inline Vec3 radiance(Ray r, uint32_t& seed) {
 // Curva de resposta de filme para converter HDR (0 a infinito) para LDR (0 a 1)
 // Preserva contraste e saturação melhor que métodos lineares.
 inline double aces(double x) {
-    const double a = 2.51f; const double b = 0.03f; const double c = 2.43f; const double d = 0.59f; const double e = 0.14f;
+    const double a = 2.51f;
+    const double b = 0.03f;
+    const double c = 2.43f;
+    const double d = 0.59f;
+    const double e = 0.14f;
     return (x * (a * x + b)) / (x * (c * x + d) + e);
 }
+
 inline double clamp(double x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 
 // Converte cor final para Byte (0-255) para exibição no monitor.
@@ -574,9 +705,11 @@ inline int toInt(double x) {
 
     // 3. Gamma Correction: Converte de Espaço Linear para sRGB (Monitor)
     // O monitor aplica gama 2.2, então aplicamos o inverso (1/2.2) para compensar.
-    return int(std::pow(clamp(x), 1.0/2.2) * 255.0 + 0.5);
+    return int(std::pow(clamp(x), 1.0 / 2.2) * 255.0 + 0.5);
 }
 
-inline void renderPathTracing(const std::vector<std::array<float, 3>>& vertices_in, const std::vector<std::vector<unsigned int>>& faces_in, const std::string& outputName) {}
+inline void renderPathTracing(const std::vector<std::array<float, 3> > &vertices_in,
+                              const std::vector<std::vector<unsigned int> > &faces_in, const std::string &outputName) {
+}
 
 #endif

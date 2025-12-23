@@ -34,13 +34,12 @@
 #endif
 
 namespace object {
-
     // ============================================================
     // 1. GERENCIAMENTO DE SELEÇÃO E CORES
     // ============================================================
 
     // Define a cor de uma face específica e atualiza a GPU
-    void Object::setFaceColor(int faceIndex, const Color& color) {
+    void Object::setFaceColor(int faceIndex, const Color &color) {
         if (faceIndex < 0) return;
 
         // Segurança: Garante que o vetor de cores tenha o tamanho correto
@@ -56,7 +55,7 @@ namespace object {
     }
 
     // Define a cor de um vértice específico
-    void Object::setVertexColor(int vertexIndex, const Color& color) {
+    void Object::setVertexColor(int vertexIndex, const Color &color) {
         if (vertexIndex < 0) return;
 
         if (vertexColors.size() != vertices_.size())
@@ -68,15 +67,16 @@ namespace object {
 
     // Limpa todas as seleções e restaura as cores originais
     void Object::clearSelection() {
-        // Restaura cor das faces selecionadas para o padrão
-        for (int faceIndex : selectedFaces)
-            setFaceColor(faceIndex, Color{0.8f, 0.8f, 0.8f});
         selectedFaces.clear();
-
-        // Restaura cor dos vértices selecionados para o padrão (Preto)
-        for (int vertexIndex : selectedVertices)
-            setVertexColor(vertexIndex, Color{0.0f, 0.0f, 0.0f});
-        selectedVertices.clear();
+        // Restaura cores, mas respeita quem é vidro
+        for (int i = 0; i < faceColors.size(); ++i) {
+            if (transparent_faces_.count(i)) {
+                faceColors[i] = {0.6f, 0.8f, 1.0f}; // Mantém azul
+            } else {
+                faceColors[i] = {0.8f, 0.8f, 0.8f}; // Restaura cinza
+            }
+        }
+        updateVBOs();
     }
 
     // Reseta todas as cores da malha (Hard Reset)
@@ -97,7 +97,7 @@ namespace object {
      * 2. Determina qual eixo (X, Y ou Z) tem a menor variação (é o mais "achatado").
      * 3. Projeta a textura no plano perpendicular a esse eixo.
      */
-    void Object::applyTextureToSelectedFaces(const std::string& filepath) {
+    void Object::applyTextureToSelectedFaces(const std::string &filepath) {
         if (selectedFaces.empty()) {
             std::cout << "Nenhuma face selecionada." << std::endl;
             return;
@@ -114,12 +114,15 @@ namespace object {
         float minY = 1e20f, maxY = -1e20f;
         float minZ = 1e20f, maxZ = -1e20f;
 
-        for (int faceIdx : selectedFaces) {
-            for (unsigned int vIdx : faces_[faceIdx]) {
-                const auto& v = vertices_[vIdx];
-                if (v[0] < minX) minX = v[0]; if (v[0] > maxX) maxX = v[0];
-                if (v[1] < minY) minY = v[1]; if (v[1] > maxY) maxY = v[1];
-                if (v[2] < minZ) minZ = v[2]; if (v[2] > maxZ) maxZ = v[2];
+        for (int faceIdx: selectedFaces) {
+            for (unsigned int vIdx: faces_[faceIdx]) {
+                const auto &v = vertices_[vIdx];
+                if (v[0] < minX) minX = v[0];
+                if (v[0] > maxX) maxX = v[0];
+                if (v[1] < minY) minY = v[1];
+                if (v[1] > maxY) maxY = v[1];
+                if (v[2] < minZ) minZ = v[2];
+                if (v[2] > maxZ) maxZ = v[2];
             }
         }
 
@@ -137,34 +140,89 @@ namespace object {
         else projectionPlane = 2; // XY (Frente)
 
         // Evita divisão por zero se a seleção for 2D ou 1D
-        if (dx < 1e-4) dx = 1.0f; if (dy < 1e-4) dy = 1.0f; if (dz < 1e-4) dz = 1.0f;
+        if (dx < 1e-4) dx = 1.0f;
+        if (dy < 1e-4) dy = 1.0f;
+        if (dz < 1e-4) dz = 1.0f;
 
         // 3. Gera UVs Globais
         // Mapeia coordenadas do mundo (World Space) para coordenadas de textura (UV 0..1)
-        for (int faceIdx : selectedFaces) {
+        for (int faceIdx: selectedFaces) {
             face_texture_map_[faceIdx] = texID; // Associa a textura à face
             std::vector<Vec2> uvs;
-            const auto& face = faces_[faceIdx];
+            const auto &face = faces_[faceIdx];
 
-            for (unsigned int vIdx : face) {
-                const auto& v = vertices_[vIdx];
+            for (unsigned int vIdx: face) {
+                const auto &v = vertices_[vIdx];
                 float u = 0.0f, coord_v = 0.0f;
 
-                if (projectionPlane == 0) { // YZ
-                    u = (v[1] - minY) / dy;       // Y -> U
+                if (projectionPlane == 0) {
+                    // YZ
+                    u = (v[1] - minY) / dy; // Y -> U
                     coord_v = (v[2] - minZ) / dz; // Z -> V
-                } else if (projectionPlane == 1) { // XZ (Chão)
-                    u = (v[0] - minX) / dx;       // X -> U
+                } else if (projectionPlane == 1) {
+                    // XZ (Chão)
+                    u = (v[0] - minX) / dx; // X -> U
                     coord_v = (v[2] - minZ) / dz; // Z -> V
-                    coord_v = 1.0f - coord_v;     // Inverte V (imagens geralmente começam no topo)
-                } else { // XY
-                    u = (v[0] - minX) / dx;       // X -> U
+                    coord_v = 1.0f - coord_v; // Inverte V (imagens geralmente começam no topo)
+                } else {
+                    // XY
+                    u = (v[0] - minX) / dx; // X -> U
                     coord_v = (v[1] - minY) / dy; // Y -> V
                 }
                 uvs.push_back({u, coord_v});
             }
             face_uv_map_[faceIdx] = uvs; // Armazena UVs calculados
         }
+    }
+
+    void Object::resetSelectedFacesToDefault() {
+        if (selectedFaces.empty()) return;
+
+        for (int faceIdx: selectedFaces) {
+            // 1. Remove associação com ID de textura OpenGL
+            face_texture_map_.erase(faceIdx);
+
+            // 2. Limpa coordenadas UV (opcional, mas bom para economizar memória)
+            face_uv_map_.erase(faceIdx);
+
+            // 3. Remove da lista de transparência (Path Tracing)
+            // (Se você implementou a lógica de vidro anterior)
+            transparent_faces_.erase(faceIdx);
+
+            // 4. Restaura a cor visual para Cinza Padrão
+            if (faceIdx < faceColors.size()) {
+                faceColors[faceIdx] = {0.8f, 0.8f, 0.8f};
+            }
+        }
+    }
+
+    void Object::setTransparentMaterialForSelectedFaces(bool enable, float ior) {
+        if (selectedFaces.empty()) return;
+
+        for (int faceIdx: selectedFaces) {
+            if (enable) {
+                transparent_faces_.insert(faceIdx);
+
+                // Visual Feedback no Editor OpenGL:
+                // Pinta de "Ciano Azulado" para indicar vidro/água
+                if (faceIdx < faceColors.size()) {
+                    faceColors[faceIdx] = {0.6f, 0.8f, 1.0f};
+                }
+            } else {
+                transparent_faces_.erase(faceIdx);
+                // Restaura cor padrão (Cinza)
+                if (faceIdx < faceColors.size()) {
+                    faceColors[faceIdx] = {0.8f, 0.8f, 0.8f};
+                }
+            }
+        }
+
+        // Atualiza a GPU com as novas cores
+        updateVBOs();
+    }
+
+    bool Object::isFaceTransparent(int faceIndex) const {
+        return transparent_faces_.count(faceIndex) > 0;
     }
 
     // ============================================================
@@ -185,14 +243,15 @@ namespace object {
         if (vertexIndex < 0 || vertexIndex >= static_cast<int>(vertices_.size())) return;
 
         // Usa o mapa de topologia Vértice->Faces para encontrar vizinhos rapidamente
-        const std::vector<int>& facesWithVertex = vertexToFacesMapping[vertexIndex];
+        const std::vector<int> &facesWithVertex = vertexToFacesMapping[vertexIndex];
 
-        for (int faceIndex : facesWithVertex) {
-            const auto& face = faces_[faceIndex];
-            for (unsigned int adjVertex : face) {
+        for (int faceIndex: facesWithVertex) {
+            const auto &face = faces_[faceIndex];
+            for (unsigned int adjVertex: face) {
                 if (adjVertex != static_cast<unsigned int>(vertexIndex)) {
                     // Evita duplicatas na seleção
-                    if (std::find(selectedVertices.begin(), selectedVertices.end(), adjVertex) == selectedVertices.end()) {
+                    if (std::find(selectedVertices.begin(), selectedVertices.end(), adjVertex) == selectedVertices.
+                        end()) {
                         selectedVertices.push_back(adjVertex);
                         setVertexColor(adjVertex, {1.0f, 0.0f, 0.0f});
                     }
@@ -207,7 +266,7 @@ namespace object {
         if (faceIndex < 0 || faceIndex >= static_cast<int>(faces_.size())) return;
 
         const auto &face = faces_[faceIndex];
-        for (unsigned int vertexIndex : face) {
+        for (unsigned int vertexIndex: face) {
             if (std::find(selectedVertices.begin(), selectedVertices.end(), vertexIndex) == selectedVertices.end()) {
                 selectedVertices.push_back(vertexIndex);
                 setVertexColor(vertexIndex, {1.0f, 0.0f, 0.0f});
@@ -220,8 +279,8 @@ namespace object {
     void Object::selectFacesFromVertex(int vertexIndex) {
         if (vertexIndex < 0 || vertexIndex >= static_cast<int>(vertices_.size())) return;
 
-        const std::vector<int>& facesWithVertex = vertexToFacesMapping[vertexIndex];
-        for (int faceIndex : facesWithVertex) {
+        const std::vector<int> &facesWithVertex = vertexToFacesMapping[vertexIndex];
+        for (int faceIndex: facesWithVertex) {
             if (std::find(selectedFaces.begin(), selectedFaces.end(), faceIndex) == selectedFaces.end()) {
                 selectedFaces.push_back(faceIndex);
                 setFaceColor(faceIndex, {1.0f, 0.0f, 0.0f});
@@ -234,8 +293,8 @@ namespace object {
     void Object::selectNeighborFacesFromFace(int faceIndex) {
         if (faceIndex < 0 || faceIndex >= static_cast<int>(faces_.size())) return;
 
-        const std::vector<int>& neighborFaces = faceAdjacencyMapping[faceIndex];
-        for (int neighborFaceIndex : neighborFaces) {
+        const std::vector<int> &neighborFaces = faceAdjacencyMapping[faceIndex];
+        for (int neighborFaceIndex: neighborFaces) {
             if (std::find(selectedFaces.begin(), selectedFaces.end(), neighborFaceIndex) == selectedFaces.end()) {
                 selectedFaces.push_back(neighborFaceIndex);
                 setFaceColor(neighborFaceIndex, {1.0f, 0.0f, 0.0f});
@@ -256,7 +315,7 @@ namespace object {
             return;
         }
         std::vector<unsigned int> newFace;
-        for (int index : selectedVertices) {
+        for (int index: selectedVertices) {
             newFace.push_back(static_cast<unsigned int>(index));
         }
 
@@ -269,15 +328,15 @@ namespace object {
         updateVBOs();
 
         // Limpa seleção
-        for (int index : selectedVertices) setVertexColor(index, Color{0.0f, 0.0f, 0.0f});
+        for (int index: selectedVertices) setVertexColor(index, Color{0.0f, 0.0f, 0.0f});
         selectedVertices.clear();
     }
 
     // Abre um diálogo nativo para inserir coordenadas X,Y,Z manualmente
     void Object::createVertexFromDialog() {
-        const char* inputX = tinyfd_inputBox("Novo Vértice", "X:", "");
-        const char* inputY = tinyfd_inputBox("Novo Vértice", "Y:", "");
-        const char* inputZ = tinyfd_inputBox("Novo Vértice", "Z:", "");
+        const char *inputX = tinyfd_inputBox("Novo Vértice", "X:", "");
+        const char *inputY = tinyfd_inputBox("Novo Vértice", "Y:", "");
+        const char *inputZ = tinyfd_inputBox("Novo Vértice", "Z:", "");
 
         if (!inputX || !inputY || !inputZ) return;
 
@@ -291,17 +350,17 @@ namespace object {
 
     void Object::createVertexAndLinkToSelected() {
         // (Similar ao createVertexFromDialog, mas conecta o novo ponto aos selecionados)
-        const char* inputX = tinyfd_inputBox("Novo Vértice", "X:", "");
+        const char *inputX = tinyfd_inputBox("Novo Vértice", "X:", "");
         if (!inputX) return;
         // ... (código de input omitido por brevidade) ...
         // Supondo x, y, z válidos:
         float x = 0, y = 0, z = 0;
         vertices_.push_back({x, y, z});
-        vertexColors.push_back({0,0,0});
+        vertexColors.push_back({0, 0, 0});
 
         if (selectedVertices.size() >= 2) {
             std::vector<unsigned int> newFace;
-            for (int idx : selectedVertices) newFace.push_back(idx);
+            for (int idx: selectedVertices) newFace.push_back(idx);
             newFace.push_back(vertices_.size() - 1);
             faces_.push_back(newFace);
             faceColors.push_back({0.8f, 0.8f, 0.8f});
@@ -314,19 +373,19 @@ namespace object {
     }
 
     void Object::editVertexCoordinates(int vertexIndex) {
-        if (vertexIndex < 0 || vertexIndex >= (int)vertices_.size()) return;
+        if (vertexIndex < 0 || vertexIndex >= (int) vertices_.size()) return;
 
         char defX[32], defY[32], defZ[32];
         snprintf(defX, 32, "%.3f", vertices_[vertexIndex][0]);
         snprintf(defY, 32, "%.3f", vertices_[vertexIndex][1]);
         snprintf(defZ, 32, "%.3f", vertices_[vertexIndex][2]);
 
-        const char* inputX = tinyfd_inputBox("Editar X", "X:", defX);
-        if(!inputX) return;
+        const char *inputX = tinyfd_inputBox("Editar X", "X:", defX);
+        if (!inputX) return;
 
         // ... Lógica de parsing ...
         float val;
-        if(sscanf(inputX, "%f", &val) == 1) vertices_[vertexIndex][0] = val;
+        if (sscanf(inputX, "%f", &val) == 1) vertices_[vertexIndex][0] = val;
 
         updateVBOs();
     }
@@ -346,20 +405,20 @@ namespace object {
             std::unordered_set<int> toDelete(selectedFaces.begin(), selectedFaces.end());
 
             // Novos vetores para a malha compactada
-            std::vector<std::vector<unsigned int>> newFaces;
+            std::vector<std::vector<unsigned int> > newFaces;
             std::vector<Color> newColors;
             std::map<int, GLuint> newTex;
-            std::map<int, std::vector<Vec2>> newUV;
+            std::map<int, std::vector<Vec2> > newUV;
 
             int newIdx = 0;
             // Copia apenas o que NÃO foi deletado
-            for(int i=0; i<(int)faces_.size(); ++i) {
-                if(toDelete.find(i) == toDelete.end()) {
+            for (int i = 0; i < (int) faces_.size(); ++i) {
+                if (toDelete.find(i) == toDelete.end()) {
                     newFaces.push_back(faces_[i]);
                     newColors.push_back(faceColors[i]);
 
                     // Preserva texturas se existirem
-                    if(face_texture_map_.count(i)) {
+                    if (face_texture_map_.count(i)) {
                         newTex[newIdx] = face_texture_map_[i];
                         newUV[newIdx] = face_uv_map_[i];
                     }
@@ -377,13 +436,13 @@ namespace object {
         // --- 2. Deletar Vértices ---
         if (!selectedVertices.empty()) {
             std::unordered_set<int> toDelete(selectedVertices.begin(), selectedVertices.end());
-            std::vector<std::array<float, 3>> newVerts;
+            std::vector<std::array<float, 3> > newVerts;
             std::vector<Color> newVColors;
             std::vector<int> mapOldToNew(vertices_.size(), -1); // Mapa para corrigir índices nas faces
 
             // Reconstrói lista de vértices e cria mapa de redirecionamento
-            for(int i=0; i<(int)vertices_.size(); ++i) {
-                if(toDelete.find(i) == toDelete.end()) {
+            for (int i = 0; i < (int) vertices_.size(); ++i) {
+                if (toDelete.find(i) == toDelete.end()) {
                     mapOldToNew[i] = newVerts.size();
                     newVerts.push_back(vertices_[i]);
                     newVColors.push_back(vertexColors[i]);
@@ -393,15 +452,15 @@ namespace object {
             vertexColors = newVColors;
 
             // Atualiza faces (remove as quebradas que usavam vértices deletados)
-            std::vector<std::vector<unsigned int>> validFaces;
-            for(auto& f : faces_) {
+            std::vector<std::vector<unsigned int> > validFaces;
+            for (auto &f: faces_) {
                 bool broken = false;
-                for(auto& idx : f) {
+                for (auto &idx: f) {
                     // Se o vértice foi deletado (map == -1), a face quebra
-                    if(mapOldToNew[idx] == -1) broken = true;
+                    if (mapOldToNew[idx] == -1) broken = true;
                     else idx = mapOldToNew[idx]; // Atualiza para o novo índice
                 }
-                if(!broken) validFaces.push_back(f);
+                if (!broken) validFaces.push_back(f);
             }
             faces_ = validFaces;
             selectedVertices.clear();
@@ -418,5 +477,4 @@ namespace object {
         auto it = originalToCurrentIndex.find(originalIndex);
         return (it != originalToCurrentIndex.end()) ? it->second : -1;
     }
-
 } // namespace object

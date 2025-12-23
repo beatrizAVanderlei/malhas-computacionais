@@ -7,6 +7,7 @@
 #include <map>
 #include <unordered_map>
 #include <GL/glew.h>
+#include <set>
 
 #ifdef __APPLE__
 #include <GLUT/glut.h>
@@ -94,6 +95,9 @@ namespace object {
 
         std::vector<std::pair<unsigned int, unsigned int>> calculateEdges(const std::vector<std::vector<unsigned int>>& faces);
         std::vector<std::array<unsigned int, 3>> triangulateFaces(const std::vector<std::vector<unsigned int>>& faces) const;
+        void setTransparentMaterialForSelectedFaces(bool enable, float ior);
+        bool isFaceTransparent(int faceIndex) const;
+        void resetSelectedFacesToDefault();
 
     private:
         void setupVBOs();
@@ -142,6 +146,7 @@ namespace object {
         std::map<int, GLuint> face_texture_map_;
         std::map<int, std::vector<Vec2>> face_uv_map_;
         std::map<GLuint, RawTextureData> texture_cache_cpu_;
+        std::set<int> transparent_faces_;
     };
 }
 #endif

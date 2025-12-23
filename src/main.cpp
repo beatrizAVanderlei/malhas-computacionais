@@ -50,11 +50,11 @@
 
 // Ponteiro para a cena otimizada (BVH) usada pelo Path Tracer.
 // É separada da malha de edição (g_object) para garantir acesso thread-safe e rápido.
-SceneData* g_renderMesh = nullptr;
+SceneData *g_renderMesh = nullptr;
 
-bool g_pathTracingMode = false;           // Flag de Estado: Alterna entre OpenGL e Path Tracing
-int g_ptSamples = 0;                      // Acumulador: Número de quadros (samples) já calculados para a média
-GLuint g_ptTexture = 0;                   // Handle OpenGL: Textura onde escrevemos o resultado do Ray Tracing
+bool g_pathTracingMode = false; // Flag de Estado: Alterna entre OpenGL e Path Tracing
+int g_ptSamples = 0; // Acumulador: Número de quadros (samples) já calculados para a média
+GLuint g_ptTexture = 0; // Handle OpenGL: Textura onde escrevemos o resultado do Ray Tracing
 
 // Buffers de Imagem (Framebuffers de Software):
 // g_accumBuffer: Armazena cores em ponto flutuante (HDR). Permite valores > 1.0 e soma precisa.
@@ -69,20 +69,20 @@ int g_winHeight = 600;
 // Armazenamento intermediário da geometria crua.
 // Necessário porque g_object encapsula os dados, e o Path Tracer precisa de acesso direto (raw access).
 std::vector<Vec3> g_ptVertices;
-std::vector<std::vector<unsigned int>> g_ptFaces;
+std::vector<std::vector<unsigned int> > g_ptFaces;
 
 // ---------------------------------------------------------
 // VARIÁVEIS GLOBAIS DO MODO GRÁFICO (RASTERIZAÇÃO PADRÃO)
 // ---------------------------------------------------------
 
-object::Object* g_object = nullptr; // A instância principal do objeto sendo editado
-float g_rotation_x = 0.0f;          // Ângulo de Euler X (Pitch)
-float g_rotation_y = 0.0f;          // Ângulo de Euler Y (Yaw)
-float g_offset_x = 0.0f;            // Pan X (Translação da câmera)
-float g_offset_y = 0.0f;            // Pan Y
-float g_zoom = 1.0f;                // Fator de escala da visualização
-bool g_vertex_only_mode = false;    // Flag de visualização: Apenas vértices (nuvem de pontos)
-bool g_face_only_mode = false;      // Flag de visualização: Apenas faces (sem wireframe)
+object::Object *g_object = nullptr; // A instância principal do objeto sendo editado
+float g_rotation_x = 0.0f; // Ângulo de Euler X (Pitch)
+float g_rotation_y = 0.0f; // Ângulo de Euler Y (Yaw)
+float g_offset_x = 0.0f; // Pan X (Translação da câmera)
+float g_offset_y = 0.0f; // Pan Y
+float g_zoom = 1.0f; // Fator de escala da visualização
+bool g_vertex_only_mode = false; // Flag de visualização: Apenas vértices (nuvem de pontos)
+bool g_face_only_mode = false; // Flag de visualização: Apenas faces (sem wireframe)
 
 // ---------------------------------------------------------
 // INICIALIZAÇÃO DE RECURSOS DO PATH TRACER
@@ -93,7 +93,7 @@ void initPathTracingTexture(int w, int h) {
 
     // Redimensiona os buffers da CPU para coincidir com a resolução da janela.
     // Limpa com preto (0,0,0) para iniciar uma nova renderização.
-    g_accumBuffer.resize(w * h, Vec3(0,0,0));
+    g_accumBuffer.resize(w * h, Vec3(0, 0, 0));
     g_pixelBuffer.resize(w * h * 3, 0); // 3 canais (R, G, B)
     g_ptSamples = 0; // Reseta o contador de convergência
 
@@ -131,14 +131,15 @@ void updatePathTracingFrame() {
     // Verifica se houve mudança na câmera
     if (last_rot_x != g_rotation_x || last_rot_y != g_rotation_y ||
         last_zoom != g_zoom || last_off_x != g_offset_x || last_off_y != g_offset_y) {
-
         isMoving = true;
         g_ptSamples = 0; // Reinicia o acumulador
-        std::fill(g_accumBuffer.begin(), g_accumBuffer.end(), Vec3(0,0,0));
+        std::fill(g_accumBuffer.begin(), g_accumBuffer.end(), Vec3(0, 0, 0));
 
-        last_rot_x = g_rotation_x; last_rot_y = g_rotation_y;
+        last_rot_x = g_rotation_x;
+        last_rot_y = g_rotation_y;
         last_zoom = g_zoom;
-        last_off_x = g_offset_x; last_off_y = g_offset_y;
+        last_off_x = g_offset_x;
+        last_off_y = g_offset_y;
     }
 
     // --- 2. Resolução Dinâmica (OTIMIZAÇÃO CRÍTICA) ---
@@ -154,7 +155,8 @@ void updatePathTracingFrame() {
     float camX = sin(radY) * cos(radX) * dist;
     float camY = -sin(radX) * dist;
     float camZ = cos(radY) * cos(radX) * dist;
-    camX -= g_offset_x; camY -= g_offset_y;
+    camX -= g_offset_x;
+    camY -= g_offset_y;
 
     Vec3 origin(camX, camY, camZ);
     Vec3 target(-g_offset_x, -g_offset_y, 0);
@@ -165,7 +167,7 @@ void updatePathTracingFrame() {
     Vec3 right = direction.cross(worldUp).norm();
     Vec3 up = right.cross(direction).norm();
 
-    double aspect = (double)g_winWidth / (double)g_winHeight;
+    double aspect = (double) g_winWidth / (double) g_winHeight;
     Vec3 cx = right * 0.5135 * aspect;
     Vec3 cy = up * -0.5135;
 
@@ -173,9 +175,8 @@ void updatePathTracingFrame() {
 
     // --- 4. Render Loop com Salto de Pixels ---
     // O loop pula 'step' pixels para ganhar velocidade
-    #pragma omp parallel for schedule(dynamic, 2)
+#pragma omp parallel for schedule(dynamic, 2)
     for (int y = 0; y < g_winHeight; y += step) {
-
         uint32_t seed = (y * 91214) + (g_ptSamples * 71932);
 
         for (int x = 0; x < g_winWidth; x += step) {
@@ -250,8 +251,12 @@ void displayCallback() {
 
         // 2. Prepara OpenGL para desenhar em 2D (Overlay)
         // Salva e reseta as matrizes para garantir coordenadas ortogonais
-        glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
-        glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
 
         // Desabilita teste de profundidade (queremos desenhar por cima de tudo)
         glDisable(GL_DEPTH_TEST);
@@ -262,10 +267,14 @@ void displayCallback() {
         // Mapeia a textura gerada pelo Path Tracer neste quadrado.
         glColor3f(1, 1, 1);
         glBegin(GL_QUADS);
-            glTexCoord2f(0, 0); glVertex2f(-1, -1);
-            glTexCoord2f(1, 0); glVertex2f( 1, -1);
-            glTexCoord2f(1, 1); glVertex2f( 1,  1);
-            glTexCoord2f(0, 1); glVertex2f(-1,  1);
+        glTexCoord2f(0, 0);
+        glVertex2f(-1, -1);
+        glTexCoord2f(1, 0);
+        glVertex2f(1, -1);
+        glTexCoord2f(1, 1);
+        glVertex2f(1, 1);
+        glTexCoord2f(0, 1);
+        glVertex2f(-1, 1);
         glEnd();
 
         // 4. Restaura estado original
@@ -281,35 +290,34 @@ void displayCallback() {
 
         // Solicita redesenho imediato para continuar o loop de refinamento da imagem
         glutPostRedisplay();
-
     } else {
         // ====================================================
         // MODO RASTERIZAÇÃO PADRÃO (OpenGL Tradicional)
         // ====================================================
         glPushMatrix();
-            // Aplica transformações da câmera (View Matrix)
-            glTranslatef(g_offset_x, g_offset_y, 0.0f);
-            glScalef(g_zoom, g_zoom, g_zoom);
-            glRotatef(g_rotation_x, 1.0f, 0.0f, 0.0f);
-            glRotatef(g_rotation_y, 0.0f, 1.0f, 0.0f);
+        // Aplica transformações da câmera (View Matrix)
+        glTranslatef(g_offset_x, g_offset_y, 0.0f);
+        glScalef(g_zoom, g_zoom, g_zoom);
+        glRotatef(g_rotation_x, 1.0f, 0.0f, 0.0f);
+        glRotatef(g_rotation_y, 0.0f, 1.0f, 0.0f);
 
-            // Definição de cores básicas para o renderizador
-            render::ColorsMap colors;
-            colors["surface"] = {0.8f, 0.8f, 0.8f}; // Cor padrão das faces
-            colors["edge"]    = {0.0f, 0.0f, 0.0f}; // Cor das arestas
-            colors["vertex"]  = {0.0f, 0.0f, 0.0f}; // Cor dos vértices
+        // Definição de cores básicas para o renderizador
+        render::ColorsMap colors;
+        colors["surface"] = {0.8f, 0.8f, 0.8f}; // Cor padrão das faces
+        colors["edge"] = {0.0f, 0.0f, 0.0f}; // Cor das arestas
+        colors["vertex"] = {0.0f, 0.0f, 0.0f}; // Cor dos vértices
 
-            if (g_object) {
-                // Desenha a geometria base (Vertices, Arestas, Faces sólidas)
-                g_object->draw(colors, g_vertex_only_mode, g_face_only_mode);
+        if (g_object) {
+            // Desenha a geometria base (Vertices, Arestas, Faces sólidas)
+            g_object->draw(colors, g_vertex_only_mode, g_face_only_mode);
 
-                // Desenha a camada de texturas por cima da malha
-                // [IMPORTANTE] Só desenha se NÃO estiver no modo "Apenas Vértices"
-                // para respeitar a visualização de nuvem de pontos.
-                if (!g_vertex_only_mode) {
-                    g_object->drawTexturedFaces();
-                }
+            // Desenha a camada de texturas por cima da malha
+            // [IMPORTANTE] Só desenha se NÃO estiver no modo "Apenas Vértices"
+            // para respeitar a visualização de nuvem de pontos.
+            if (!g_vertex_only_mode) {
+                g_object->drawTexturedFaces();
             }
+        }
         glPopMatrix();
 
         glutSwapBuffers();
@@ -333,7 +341,7 @@ void idleCallback() {
 // ---------------------------------------------------------
 // APLICAÇÃO GRÁFICA INTERATIVA (MODO 1)
 // ---------------------------------------------------------
-void runGraphicalApp(int argc, char** argv) {
+void runGraphicalApp(int argc, char **argv) {
     // 1. Inicialização do GLUT (Janela e Contexto)
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH); // Buffer Duplo, RGB e Z-Buffer
@@ -361,14 +369,14 @@ void runGraphicalApp(int argc, char** argv) {
     fileio::MeshData mesh;
     try {
         mesh = fileio::read_file(filename); // Parse do arquivo
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "Erro ao carregar o arquivo: " << e.what() << std::endl;
         exit(EXIT_FAILURE);
     }
 
     // Converte formato da struct de IO para vetor local
-    std::vector<std::array<float, 3>> vertices;
-    for (const auto& v : mesh.vertices) {
+    std::vector<std::array<float, 3> > vertices;
+    for (const auto &v: mesh.vertices) {
         vertices.push_back({
             static_cast<float>(v[0]),
             static_cast<float>(v[1]),
@@ -382,10 +390,13 @@ void runGraphicalApp(int argc, char** argv) {
     float minX = vertices[0][0], maxX = vertices[0][0];
     float minY = vertices[0][1], maxY = vertices[0][1];
     float minZ = vertices[0][2], maxZ = vertices[0][2];
-    for (const auto &v : vertices) {
-        if (v[0] < minX) minX = v[0]; if (v[0] > maxX) maxX = v[0];
-        if (v[1] < minY) minY = v[1]; if (v[1] > maxY) maxY = v[1];
-        if (v[2] < minZ) minZ = v[2]; if (v[2] > maxZ) maxZ = v[2];
+    for (const auto &v: vertices) {
+        if (v[0] < minX) minX = v[0];
+        if (v[0] > maxX) maxX = v[0];
+        if (v[1] < minY) minY = v[1];
+        if (v[1] > maxY) maxY = v[1];
+        if (v[2] < minZ) minZ = v[2];
+        if (v[2] > maxZ) maxZ = v[2];
     }
 
     float centerX = (minX + maxX) / 2.0f;
@@ -401,7 +412,7 @@ void runGraphicalApp(int argc, char** argv) {
     float scaleFactor = 2.0f / (maxDimension > 0 ? maxDimension : 1.0f);
 
     // Aplica a transformação diretamente nos vértices (Baking)
-    for (auto &v : vertices) {
+    for (auto &v: vertices) {
         v[0] = (v[0] - centerX) * scaleFactor;
         v[1] = (v[1] - centerY) * scaleFactor;
         v[2] = (v[2] - centerZ) * scaleFactor;
@@ -410,10 +421,10 @@ void runGraphicalApp(int argc, char** argv) {
     g_zoom = 1.0f; // Reseta zoom da câmera
 
     // Prepara topologia (Faces)
-    std::vector<std::vector<unsigned int>> faces;
-    for (const auto& face : mesh.faces) {
+    std::vector<std::vector<unsigned int> > faces;
+    for (const auto &face: mesh.faces) {
         std::vector<unsigned int> f;
-        for (auto idx : face)
+        for (auto idx: face)
             f.push_back(static_cast<unsigned int>(idx));
         faces.push_back(f);
     }
@@ -422,7 +433,7 @@ void runGraphicalApp(int argc, char** argv) {
     // Copia IDs de grupo (ex: 'g' ou 'usemtl' do OBJ) para permitir seleção lógica.
     std::vector<unsigned int> face_cells;
     if (!mesh.faceCells.empty()) {
-        for (int id : mesh.faceCells) {
+        for (int id: mesh.faceCells) {
             face_cells.push_back(static_cast<unsigned int>(id));
         }
     } else {
@@ -433,13 +444,13 @@ void runGraphicalApp(int argc, char** argv) {
     // Prepara dados globais para o Path Tracer
     g_ptVertices.clear();
     g_ptFaces.clear();
-    for (const auto& v : vertices) {
+    for (const auto &v: vertices) {
         g_ptVertices.push_back(Vec3(v[0], v[1], v[2]));
     }
     g_ptFaces = faces;
 
     // 5. Instanciação do Objeto "Deus" (God Object)
-    std::array<float, 3> position = { 0.0f, 0.0f, 0.0f };
+    std::array<float, 3> position = {0.0f, 0.0f, 0.0f};
     g_object = new object::Object(position, vertices, faces, face_cells, filename, detection_size, true);
     g_object->clearColors(); // Reseta para cor padrão (Cinza Claro)
 
@@ -472,13 +483,13 @@ void runPathTracingMode() {
     fileio::MeshData mesh;
     try {
         mesh = fileio::read_file(filename);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "Erro: " << e.what() << std::endl;
         exit(EXIT_FAILURE);
     }
 
-    std::vector<std::array<float, 3>> vertices;
-    for (const auto& v : mesh.vertices) {
+    std::vector<std::array<float, 3> > vertices;
+    for (const auto &v: mesh.vertices) {
         vertices.push_back({static_cast<float>(v[0]), static_cast<float>(v[1]), static_cast<float>(v[2])});
     }
 
@@ -486,10 +497,13 @@ void runPathTracingMode() {
     float minX = vertices[0][0], maxX = vertices[0][0];
     float minY = vertices[0][1], maxY = vertices[0][1];
     float minZ = vertices[0][2], maxZ = vertices[0][2];
-    for (const auto &v : vertices) {
-        if (v[0] < minX) minX = v[0]; if (v[0] > maxX) maxX = v[0];
-        if (v[1] < minY) minY = v[1]; if (v[1] > maxY) maxY = v[1];
-        if (v[2] < minZ) minZ = v[2]; if (v[2] > maxZ) maxZ = v[2];
+    for (const auto &v: vertices) {
+        if (v[0] < minX) minX = v[0];
+        if (v[0] > maxX) maxX = v[0];
+        if (v[1] < minY) minY = v[1];
+        if (v[1] > maxY) maxY = v[1];
+        if (v[2] < minZ) minZ = v[2];
+        if (v[2] > maxZ) maxZ = v[2];
     }
 
     // 3. Calcula Centro
@@ -512,7 +526,7 @@ void runPathTracingMode() {
     float scale = 2.0f / (maxDimension > 0 ? maxDimension : 1.0f);
 
     // Aplica Centralização E Escala diretamente nos vértices
-    for (auto &v : vertices) {
+    for (auto &v: vertices) {
         v[0] = (v[0] - centerX) * scale;
         v[1] = (v[1] - centerY) * scale;
         v[2] = (v[2] - centerZ) * scale;
@@ -520,10 +534,10 @@ void runPathTracingMode() {
     // ==============================================================
 
     // 5. Prepara as faces
-    std::vector<std::vector<unsigned int>> faces;
-    for (const auto& face : mesh.faces) {
+    std::vector<std::vector<unsigned int> > faces;
+    for (const auto &face: mesh.faces) {
         std::vector<unsigned int> f;
-        for (auto idx : face) f.push_back(static_cast<unsigned int>(idx));
+        for (auto idx: face) f.push_back(static_cast<unsigned int>(idx));
         faces.push_back(f);
     }
 
@@ -545,14 +559,14 @@ void runPerformanceTest() {
     fileio::MeshData mesh;
     try {
         mesh = fileio::read_file(filename);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "Erro ao carregar o arquivo: " << e.what() << std::endl;
         exit(EXIT_FAILURE);
     }
 
     // Converte os vértices
-    std::vector<std::array<float, 3>> vertices;
-    for (const auto& v : mesh.vertices) {
+    std::vector<std::array<float, 3> > vertices;
+    for (const auto &v: mesh.vertices) {
         vertices.push_back({
             static_cast<float>(v[0]),
             static_cast<float>(v[1]),
@@ -561,10 +575,10 @@ void runPerformanceTest() {
     }
 
     // Converte as faces
-    std::vector<std::vector<unsigned int>> faces;
-    for (const auto& face : mesh.faces) {
+    std::vector<std::vector<unsigned int> > faces;
+    for (const auto &face: mesh.faces) {
         std::vector<unsigned int> f;
-        for (auto idx : face) {
+        for (auto idx: face) {
             f.push_back(static_cast<unsigned int>(idx));
         }
         faces.push_back(f);
@@ -591,14 +605,14 @@ void runPerformanceTestNoPrep() {
     fileio::MeshData mesh;
     try {
         mesh = fileio::read_file(filename);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "Erro ao carregar o arquivo: " << e.what() << std::endl;
         exit(EXIT_FAILURE);
     }
 
     // Converte os vértices
-    std::vector<std::array<float, 3>> vertices;
-    for (const auto& v : mesh.vertices) {
+    std::vector<std::array<float, 3> > vertices;
+    for (const auto &v: mesh.vertices) {
         vertices.push_back({
             static_cast<float>(v[0]),
             static_cast<float>(v[1]),
@@ -607,10 +621,10 @@ void runPerformanceTestNoPrep() {
     }
 
     // Converte as faces
-    std::vector<std::vector<unsigned int>> faces;
-    for (const auto& face : mesh.faces) {
+    std::vector<std::vector<unsigned int> > faces;
+    for (const auto &face: mesh.faces) {
         std::vector<unsigned int> f;
-        for (auto idx : face) {
+        for (auto idx: face) {
             f.push_back(static_cast<unsigned int>(idx));
         }
         faces.push_back(f);
@@ -633,7 +647,7 @@ void runPerformanceTestNoPrep() {
 // Main: escolhe o modo com base no argumento de linha de comando
 // -----------------------
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     // Se receber um argumento, verifique: "0" para performance test, "1" para a aplicação gráfica.
     if (argc > 1) {
         std::string mode = argv[1];

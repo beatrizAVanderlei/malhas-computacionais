@@ -45,7 +45,6 @@ extern float g_rotation_x;
 extern float g_rotation_y;
 
 namespace object {
-
     // ============================================================
     // 1. HELPER DE TRANSFORMAÇÃO (Matriz ModelView)
     // ============================================================
@@ -53,12 +52,12 @@ namespace object {
      * Aplica as transformações geométricas para alinhar o "mundo do picking"
      * com o "mundo visual". Se isso estiver errado, o clique errará o alvo.
      */
-    static void applyPickingTransform(const std::array<float, 3>& pos, float scale) {
+    static void applyPickingTransform(const std::array<float, 3> &pos, float scale) {
         // 1. Transformações da Câmera (Global/View Matrix)
         glTranslatef(g_offset_x, g_offset_y, 0.0f); // Pan
-        glScalef(g_zoom, g_zoom, g_zoom);           // Zoom
-        glRotatef(g_rotation_x, 1.0f, 0.0f, 0.0f);  // Rotação X (Pitch)
-        glRotatef(g_rotation_y, 0.0f, 1.0f, 0.0f);  // Rotação Y (Yaw)
+        glScalef(g_zoom, g_zoom, g_zoom); // Zoom
+        glRotatef(g_rotation_x, 1.0f, 0.0f, 0.0f); // Rotação X (Pitch)
+        glRotatef(g_rotation_y, 0.0f, 1.0f, 0.0f); // Rotação Y (Yaw)
 
         // 2. Transformações do Objeto (Local/Model Matrix)
         glTranslatef(pos[0], pos[1], pos[2]);
@@ -76,10 +75,10 @@ namespace object {
 
         // OTIMIZAÇÃO: Desliga recursos gráficos caros e desnecessários para identificação.
         // Só precisamos da geometria plana e cor sólida.
-        glDisable(GL_DITHER);     // Sem dithering de cor
-        glDisable(GL_LIGHTING);   // Sem cálculo de luz (cor pura)
+        glDisable(GL_DITHER); // Sem dithering de cor
+        glDisable(GL_LIGHTING); // Sem cálculo de luz (cor pura)
         glDisable(GL_TEXTURE_2D); // Sem texturas
-        glDisable(GL_BLEND);      // Sem transparência
+        glDisable(GL_BLEND); // Sem transparência
 
         // Garante preenchimento sólido (se estivesse em wireframe, seria difícil clicar)
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -108,7 +107,7 @@ namespace object {
             // Desenha o triângulo
             for (int j = 0; j < 3; ++j) {
                 unsigned int vertexIndex = tri_faces[i][j];
-                const std::array<float, 3>& vertex = vertices_[vertexIndex];
+                const std::array<float, 3> &vertex = vertices_[vertexIndex];
                 glVertex3f(vertex[0], vertex[1], vertex[2]);
             }
         }
@@ -174,7 +173,7 @@ namespace object {
 
             glColor3f(r, g, b);
 
-            const std::array<float, 3>& vertex = vertices_[i];
+            const std::array<float, 3> &vertex = vertices_[i];
             glVertex3f(vertex[0], vertex[1], vertex[2]);
         }
         glEnd();
@@ -221,5 +220,4 @@ namespace object {
             }
         }
     }
-
 } // namespace object

@@ -40,7 +40,6 @@
 #include <unordered_set>
 
 namespace object {
-
     // ============================================================
     // ESTRUTURAS AUXILIARES
     // ============================================================
@@ -49,7 +48,7 @@ namespace object {
     // O C++ padrão não possui hash nativo para pares, então precisamos definir um.
     // Usado para identificar arestas únicas em mapas não ordenados (Hash Maps).
     struct PairHash {
-        std::size_t operator()(const std::pair<unsigned int, unsigned int>& p) const {
+        std::size_t operator()(const std::pair<unsigned int, unsigned int> &p) const {
             // Combina o hash do primeiro índice com o hash do segundo.
             auto h1 = std::hash<unsigned int>{}(p.first);
             auto h2 = std::hash<unsigned int>{}(p.second);
@@ -64,27 +63,26 @@ namespace object {
     // ============================================================
 
     // Inicializa o objeto, carrega dados na RAM e prepara a GPU.
-    Object::Object(const std::array<float, 3>& position,
-               const std::vector<std::array<float, 3>>& vertices,
-               const std::vector<std::vector<unsigned int>>& faces,
-               const std::vector<unsigned int>& face_cells,
-               const std::string& filename,
-               int detection_size,
-               bool initGl)
-    : filename_(filename),
-      position_(position), // Posição no mundo (Translação)
-      vertices_(vertices), // Lista de coordenadas (x,y,z)
-      faces_(faces),       // Topologia (índices)
-      face_cells_(face_cells), // Grupos lógicos (IDs de material/objeto)
-      detection_size_(detection_size),
-      scale_(1.0f),
-      // Inicializa handles OpenGL com 0 (nulo)
-      vbo_vertices_(0),
-      ibo_faces_(0),
-      ibo_edges_(0),
-      selectedFace(-1),
-      selectedVertex(-1)
-    {
+    Object::Object(const std::array<float, 3> &position,
+                   const std::vector<std::array<float, 3> > &vertices,
+                   const std::vector<std::vector<unsigned int> > &faces,
+                   const std::vector<unsigned int> &face_cells,
+                   const std::string &filename,
+                   int detection_size,
+                   bool initGl)
+        : filename_(filename),
+          position_(position), // Posição no mundo (Translação)
+          vertices_(vertices), // Lista de coordenadas (x,y,z)
+          faces_(faces), // Topologia (índices)
+          face_cells_(face_cells), // Grupos lógicos (IDs de material/objeto)
+          detection_size_(detection_size),
+          scale_(1.0f),
+          // Inicializa handles OpenGL com 0 (nulo)
+          vbo_vertices_(0),
+          ibo_faces_(0),
+          ibo_edges_(0),
+          selectedFace(-1),
+          selectedVertex(-1) {
         // 1. Inicialização de Propriedades Visuais
         // Cria vetores de cor paralelos à geometria.
         // Inicializa vértices com Preto (0,0,0)
@@ -99,12 +97,39 @@ namespace object {
             originalToCurrentIndex[static_cast<int>(i)] = static_cast<int>(i);
         }
 
+        if (detection_size_ != 0) {
+            // MODO TAMANHO REAL: Usa os vértices exatamente como foram criados.
+            this->scale_ = 1.0f;
+        } else {
+            // MODO FIT-TO-SCREEN (Padrão):
+            // Só entra aqui se detection_size for 0. Calcula Bounding Box.
+            // Se o seu código antigo fazia "vertices_[i] = ... / maxDim", ele deve ficar
+            // EXCLUSIVAMENTE dentro deste 'else'.
+
+            // Exemplo de cálculo seguro apenas visual (sem alterar vertices_):
+            if (!vertices_.empty()) {
+                float minX = vertices_[0][0], maxX = vertices_[0][0];
+                float minY = vertices_[0][1], maxY = vertices_[0][1];
+                float minZ = vertices_[0][2], maxZ = vertices_[0][2];
+                for (const auto &v: vertices_) {
+                    if (v[0] < minX) minX = v[0];
+                    if (v[0] > maxX) maxX = v[0];
+                    if (v[1] < minY) minY = v[1];
+                    if (v[1] > maxY) maxY = v[1];
+                    if (v[2] < minZ) minZ = v[2];
+                    if (v[2] > maxZ) maxZ = v[2];
+                }
+                float maxDim = std::max({maxX - minX, maxY - minY, maxZ - minZ});
+                if (maxDim > 0) this->scale_ = 2.0f / maxDim;
+            }
+        }
+
         // 3. Pré-cálculo de Topologia (Otimização)
         // Calcula estruturas de aceleração para navegação na malha.
         // Feito apenas uma vez (ou quando a malha muda) para não pesar no render loop.
         edges_ = calculateEdges(faces_); // Extrai linhas para Wireframe
         vertexToFacesMapping = computeVertexToFaces(); // Mapeia Vértice -> Faces Vizinhas
-        faceAdjacencyMapping  = computeFaceAdjacency(); // Mapeia Face -> Faces Vizinhas
+        faceAdjacencyMapping = computeFaceAdjacency(); // Mapeia Face -> Faces Vizinhas
 
         // 4. Upload para GPU
         // Se o contexto OpenGL estiver ativo, envia os dados para a VRAM.
@@ -117,9 +142,12 @@ namespace object {
     // Limpa a memória da placa de vídeo quando o objeto é destruído.
     Object::~Object() {
         // Verifica se os buffers existem antes de deletar
-        if (vbo_vertices_ != 0) glDeleteBuffers(1, &vbo_vertices_);
-        if (ibo_faces_ != 0) glDeleteBuffers(1, &ibo_faces_);
-        if (ibo_edges_ != 0) glDeleteBuffers(1, &ibo_edges_);
+        if (vbo_vertices_ != 0)
+            glDeleteBuffers(1, &vbo_vertices_);
+        if (ibo_faces_ != 0)
+            glDeleteBuffers(1, &ibo_faces_);
+        if (ibo_edges_ != 0)
+            glDeleteBuffers(1, &ibo_edges_);
     }
 
     // Recalcula as relações de vizinhança.
@@ -127,6 +155,7 @@ namespace object {
     void Object::updateConnectivity() {
         vertexToFacesMapping = computeVertexToFaces();
         faceAdjacencyMapping = computeFaceAdjacency();
+        edges_ = calculateEdges(faces_);
     }
 
     // ============================================================
@@ -139,13 +168,13 @@ namespace object {
      * Útil para: Calcular normais suaves (smooth shading) e selecionar adjacências.
      * Retorna: Um vetor de vetores, onde o índice i contém a lista de faces do vértice i.
      */
-    std::vector<std::vector<int>> Object::computeVertexToFaces() const {
-        std::vector<std::vector<int>> mapping(vertices_.size());
+    std::vector<std::vector<int> > Object::computeVertexToFaces() const {
+        std::vector<std::vector<int> > mapping(vertices_.size());
 
         // Itera sobre todas as faces
         for (int f = 0; f < static_cast<int>(faces_.size()); ++f) {
             // Para cada vértice 'v' da face 'f'
-            for (unsigned int v : faces_[f]) {
+            for (unsigned int v: faces_[f]) {
                 // Adiciona 'f' à lista de faces incidentes em 'v'
                 mapping[v].push_back(f);
             }
@@ -159,9 +188,9 @@ namespace object {
      * Duas faces são vizinhas se compartilham uma aresta (2 vértices em comum).
      * Útil para: Algoritmos de seleção por inundação (Flood Fill / BFS).
      */
-    std::vector<std::vector<int>> Object::computeFaceAdjacency() const {
+    std::vector<std::vector<int> > Object::computeFaceAdjacency() const {
         int numFaces = faces_.size();
-        std::vector<std::vector<int>> faceAdj(numFaces);
+        std::vector<std::vector<int> > faceAdj(numFaces);
 
         // Passo A: Mapear Arestas -> Lista de Faces que a compartilham.
         // Aresta é definida por um par {min(v1,v2), max(v1,v2)} para garantir unicidade.
@@ -194,7 +223,7 @@ namespace object {
 
                 // Olha no mapa quem compartilha essa aresta
                 const auto &faceList = edgeToFaces[{a, b}];
-                for (int other : faceList) {
+                for (int other: faceList) {
                     if (other != f) adjSet.insert(other); // Adiciona vizinho (exceto ele mesmo)
                 }
             }
@@ -209,10 +238,11 @@ namespace object {
      * Converte a lista de faces (polígonos preenchidos) em uma lista de linhas (esqueleto).
      * Remove arestas duplicadas (ex: aresta compartilhada entre dois triângulos é desenhada só uma vez).
      */
-    std::vector<std::pair<unsigned int, unsigned int>> Object::calculateEdges(const std::vector<std::vector<unsigned int>>& faces) {
-        std::set<std::pair<unsigned int, unsigned int>> edgeSet; // Set ordenado remove duplicatas automaticamente
+    std::vector<std::pair<unsigned int, unsigned int> > Object::calculateEdges(
+        const std::vector<std::vector<unsigned int> > &faces) {
+        std::set<std::pair<unsigned int, unsigned int> > edgeSet; // Set ordenado remove duplicatas automaticamente
 
-        for (const auto& face : faces) {
+        for (const auto &face: faces) {
             size_t n = face.size();
 
             // Tratamento especial para Quadriláteros (Quads)
@@ -235,7 +265,7 @@ namespace object {
             }
         }
         // Retorna como vetor linear para envio rápido ao OpenGL (IBO)
-        return std::vector<std::pair<unsigned int, unsigned int>>(edgeSet.begin(), edgeSet.end());
+        return std::vector<std::pair<unsigned int, unsigned int> >(edgeSet.begin(), edgeSet.end());
     }
 
     // ============================================================
@@ -243,18 +273,17 @@ namespace object {
     // ============================================================
 
     // Retorna o cache de texturas (CPU) para uso no Path Tracer.
-    const std::map<GLuint, RawTextureData>& Object::getTextureCache() const {
+    const std::map<GLuint, RawTextureData> &Object::getTextureCache() const {
         return texture_cache_cpu_;
     }
 
     // Retorna o mapa de qual face usa qual ID de textura OpenGL.
-    const std::map<int, GLuint>& Object::getFaceTextureMap() const {
+    const std::map<int, GLuint> &Object::getFaceTextureMap() const {
         return face_texture_map_;
     }
 
     // Retorna as coordenadas UV de cada face.
-    const std::map<int, std::vector<Vec2>>& Object::getFaceUvMap() const {
+    const std::map<int, std::vector<Vec2> > &Object::getFaceUvMap() const {
         return face_uv_map_;
     }
-
 } // namespace object
