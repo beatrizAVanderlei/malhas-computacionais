@@ -401,10 +401,10 @@ inline bool getIntersection(const Ray& r, double& t, int& id, Vec3& normalHit, i
     }
 
     // 3. Testa Luz Esférica (Geometria Analítica)
-    Vec3 L(10.0, 20.0, 10.0); // Posição da luz
+    Vec3 L(0.0, 0.6, 0.0); // Posição da luz
     Vec3 op = L - r.o;
     double b = op.dot(r.d);
-    double det = b * b - op.dot(op) + 25.0; // r^2 = 25
+    double det = b * b - op.dot(op) + 0.01; // r^2 = 25
     if (det > 0) {
         double t_luz = b - std::sqrt(det);
         if (t_luz > 1e-4 && t_luz < t) {
@@ -422,8 +422,8 @@ inline Vec3 radiance(Ray r, uint32_t& seed) {
     Vec3 finalColor(0.0, 0.0, 0.0); // Luz total que chega à câmera
 
     // Configuração da Luz Esférica
-    Vec3 lightPos(10.0, 20.0, 10.0);
-    double lightRadius = 5.0;
+    Vec3 lightPos(0.0, 0.6, 0.0);
+    double lightRadius = 0.04;
 
     // Intensidade da luz reduzida para 8.0 para evitar estouro (burnout)
     Vec3 lightEmission(8.0, 8.0, 8.0);

@@ -356,7 +356,7 @@ void runGraphicalApp(int argc, char** argv) {
 
     // 2. Carregamento do Arquivo 3D
     int detection_size = 5; // Tolerância para clique do mouse (picking)
-    std::string filename = "../assets/indoor_plant_02.obj";
+    std::string filename = "../assets/cornell_box.obj";
 
     fileio::MeshData mesh;
     try {
