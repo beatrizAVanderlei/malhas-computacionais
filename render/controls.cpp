@@ -46,10 +46,9 @@ extern float g_offset_y;
 
 // Variáveis do Path Tracing
 extern bool g_pathTracingMode;
-extern std::vector<Vec3> g_ptVertices; // Cópia bruta dos vértices para o Ray Tracer
-extern std::vector<std::vector<unsigned int> > g_ptFaces; // Cópia bruta da topologia
+extern std::vector<Vec3> g_ptVertices;
+extern std::vector<std::vector<unsigned int> > g_ptFaces;
 
-// Declaração da função de inicialização da textura do Path Tracer
 void initPathTracingTexture(int w, int h);
 
 #ifndef M_PI
@@ -57,7 +56,6 @@ void initPathTracingTexture(int w, int h);
 #endif
 
 // Helper para gerar geometria de esfera
-// Esta função cria matematicamente os vértices e triângulos de uma esfera
 void generateSphereGeometry(float radius, float cx, float cy, float cz, int sectors, int stacks,
                             std::vector<std::array<float, 3> > &outVertices,
                             std::vector<std::vector<unsigned int> > &outFaces,
@@ -111,7 +109,6 @@ namespace {
     std::set<int> specialKeysDown;
     static int lastLeftClickTime = 0; // Para detecção de duplo clique
 
-    // Helper para obter as dimensões atuais da janela OpenGL
     void getViewport(int viewport[4]) {
         glGetIntegerv(GL_VIEWPORT, viewport);
     }
@@ -132,8 +129,7 @@ namespace controls {
         keysDown.erase(static_cast<unsigned char>(std::tolower(key)));
     }
 
-    // Lógica de rotação da câmera (Orbital)
-    // Atualiza os ângulos de Euler baseados nas teclas WASD
+    // Lógica de rotação: Atualiza os ângulos de Euler baseados nas teclas WASD
     void updateRotation(float &rotation_x, float &rotation_y) {
         const float rotationStep = 1.0f;
         if (keysDown.count('w')) rotation_x -= rotationStep; // Cima
@@ -143,7 +139,6 @@ namespace controls {
     }
 
     // Lógica de Zoom (Escala)
-    // Suporta teclas '=' (mais) e '-' (menos)
     void processZoom(float &zoom, unsigned char key, int modifiers) {
         const float zoomStep = 0.05f;
         if (key == '=' || key == '+' || key == 43)
@@ -161,8 +156,7 @@ namespace controls {
         specialKeysDown.erase(key);
     }
 
-    // Lógica de Pan (Translação da Câmera)
-    // Move o objeto no plano da tela (X/Y)
+    // Lógica de translação: Move o objeto no plano da tela (X/Y)
     void updateNavigation(float &offset_x, float &offset_y) {
         const float moveStep = 0.05f;
         if (specialKeysDown.count(GLUT_KEY_UP)) offset_y += moveStep;
@@ -181,13 +175,10 @@ namespace controls {
 
         // --- DELETE: Remoção de Elementos ---
         if (key == 127) {
-            // 127 é o código ASCII para DEL
             g_object->deleteSelectedElements();
-            glutPostRedisplay(); // Solicita redesenho da tela
+            glutPostRedisplay();
         }
 
-        // --- 'P': Alternar para PATH TRACING ---
-        // Este é um dos blocos mais complexos. Ele prepara a cena para o renderizador físico.
         // --- 'P': Alternar para PATH TRACING ---
         else if (lowerKey == 'p') {
             g_pathTracingMode = !g_pathTracingMode;
@@ -209,7 +200,7 @@ namespace controls {
                     return;
                 }
 
-                // 2. Normalização e Escala (Mantendo a lógica correta que fizemos antes)
+                // 2. Normalização e Escala
                 float minX = currentVertices[0][0], maxX = currentVertices[0][0];
                 float minY = currentVertices[0][1], maxY = currentVertices[0][1];
                 float minZ = currentVertices[0][2], maxZ = currentVertices[0][2];
@@ -228,21 +219,21 @@ namespace controls {
                 float maxDim = std::max(std::max(w, h), d);
                 float scale = 2.0f / (maxDim > 0 ? maxDim : 1.0f);
 
-                // 3. Prepara a Cena Estática (SceneData)
+                // 3. Prepara a Cena Estática
                 static SceneData scene;
                 if (scene.bvhRoot) {
                     delete scene.bvhRoot;
                     scene.bvhRoot = nullptr;
                 }
 
-                // Limpa vetores antigos
+                // Limpa vetores
                 scene.vertices.clear();
                 scene.faces.clear();
                 scene.triIndices.clear();
                 scene.textures.clear();
                 scene.faceTextureID.clear();
                 scene.faceUVs.clear();
-                scene.faceMaterials.clear(); // [NOVO] Limpa vetor de materiais
+                scene.faceMaterials.clear();
 
                 // Copia vértices transformados
                 for (const auto &v: currentVertices) {
@@ -269,17 +260,15 @@ namespace controls {
                     glToPtMap[glID] = (int) scene.textures.size() - 1;
                 }
 
-                // 5. Triangulação de Faces e Atribuição de MATERIAIS
+                // 5. Triangulação de Faces e Atribuição de materiais
                 for (size_t fIdx = 0; fIdx < currentFaces.size(); ++fIdx) {
                     const auto &face = currentFaces[fIdx];
 
-                    // --- [NOVO] Lógica de Material ---
                     // Verifica se a face no editor está marcada como transparente
                     int matType = 0; // 0 = Difuso/Padrão
                     if (g_object->isFaceTransparent((int) fIdx)) {
                         matType = 2; // 2 = Vidro/Refração (Convenção)
                     }
-                    // -------------------------------
 
                     // Texturas
                     int currentTexID = -1;
@@ -295,13 +284,13 @@ namespace controls {
                         }
                     }
 
-                    // --- Triangulação (Agora enviando matType) ---
+                    // --- Triangulação ---
 
                     if (face.size() == 3) {
                         // Triângulo
                         scene.faces.push_back({face[0], face[1], face[2]});
                         scene.faceTextureID.push_back(currentTexID);
-                        scene.faceMaterials.push_back(matType); // [NOVO] Adiciona material
+                        scene.faceMaterials.push_back(matType);
 
                         if (currentTexID != -1 && originalUVs.size() >= 3)
                             scene.faceUVs.push_back({originalUVs[0], originalUVs[1], originalUVs[2]});
@@ -311,7 +300,7 @@ namespace controls {
                         // Tri 1
                         scene.faces.push_back({face[0], face[1], face[2]});
                         scene.faceTextureID.push_back(currentTexID);
-                        scene.faceMaterials.push_back(matType); // [NOVO]
+                        scene.faceMaterials.push_back(matType);
                         if (currentTexID != -1 && originalUVs.size() >= 4)
                             scene.faceUVs.push_back({originalUVs[0], originalUVs[1], originalUVs[2]});
                         else scene.faceUVs.push_back({});
@@ -319,7 +308,7 @@ namespace controls {
                         // Tri 2
                         scene.faces.push_back({face[0], face[2], face[3]});
                         scene.faceTextureID.push_back(currentTexID);
-                        scene.faceMaterials.push_back(matType); // [NOVO]
+                        scene.faceMaterials.push_back(matType);
                         if (currentTexID != -1 && originalUVs.size() >= 4)
                             scene.faceUVs.push_back({originalUVs[0], originalUVs[2], originalUVs[3]});
                         else scene.faceUVs.push_back({});
@@ -350,13 +339,11 @@ namespace controls {
                     int seedFace = g_object->getSelectedFaces().front();
                     bool groupSelected = false;
 
-                    // Metodo 1: Seleção por Grupo Lógico (definido no arquivo OBJ/OFF)
-                    // É O(N) e muito rápido.
+                    // Metodo 1: Seleção por Grupo Lógico (definido no arquivo OBJ)
                     const auto &cells = g_object->getFaceCells();
                     if (!cells.empty() && seedFace < cells.size()) {
                         unsigned int groupID = cells[seedFace];
                         if (groupID != 0xFFFFFFFF) {
-                            // 0xFFFFFFFF é o valor sentinela para "sem grupo"
                             std::cout << "Selecionando por Grupo definido no arquivo (ID: " << groupID << ")..." <<
                                     std::endl;
                             g_object->selectFacesByGroup(seedFace);
@@ -395,7 +382,7 @@ namespace controls {
                                     visited[neighbor] = true;
                                     q.push(neighbor);
                                     g_object->getSelectedFaces().push_back(neighbor);
-                                    g_object->setFaceColor(neighbor, {1.0f, 0.0f, 0.0f}); // Pinta de vermelho
+                                    g_object->setFaceColor(neighbor, {1.0f, 0.0f, 0.0f});
                                 }
                             }
                         }
@@ -403,15 +390,13 @@ namespace controls {
                     }
                 }
             } else {
-                keyDown(key); // Apenas 'a' minúsculo (navegação)
+                keyDown(key);
             }
             glutPostRedisplay();
         }
 
         // --- 'T': Aplicar Textura ---
-        // --- 'T': Aplicar Textura ---
         else if (lowerKey == 't') {
-            // Verifica se SHIFT está pressionado
             if (modifiers & GLUT_ACTIVE_SHIFT) {
                 // --- MODO TRANSPARÊNCIA (VIDRO/ÁGUA) ---
                 if (!g_object->getSelectedFaces().empty()) {
@@ -423,7 +408,7 @@ namespace controls {
                     std::cout << "Selecione faces para aplicar transparencia." << std::endl;
                 }
             } else {
-                // --- MODO TEXTURA (Existente) ---
+                // --- MODO TEXTURA ---
                 if (!g_object->getSelectedFaces().empty()) {
                     const char *filepath = tinyfd_openFileDialog(
                         "Selecionar Textura", "", 2,
@@ -432,7 +417,7 @@ namespace controls {
 
                     if (filepath) {
                         // Aplica a textura nas faces selecionadas
-                        // A função interna do objeto cuida de calcular a projeção UV global
+                        // Função interna do objeto cuida de calcular a projeção UV global
                         g_object->applyTextureToSelectedFaces(std::string(filepath));
                         glutPostRedisplay();
                     }
@@ -444,10 +429,9 @@ namespace controls {
             if (!g_object->getSelectedFaces().empty()) {
                 std::cout << "Resetando faces selecionadas para o padrao (Cinza Solido)..." << std::endl;
 
-                // 1. Chama a função de limpeza na classe objeto
+                //Chama a função de limpeza na classe objeto
                 g_object->resetSelectedFacesToDefault();
 
-                // 2. ATUALIZA A GPU (Crítico para ver a mudança imediatamente)
                 g_object->updateVBOs();
 
                 glutPostRedisplay();
@@ -532,29 +516,24 @@ namespace controls {
             }
         } // --- 'E': Criar Esfera ---
         else if (lowerKey == 'e') {
-            // 1. Inputs via TinyFileDialogs
-            // IMPORTANTE: tinyfd retorna um ponteiro estático. Precisamos salvar em std::string
-            // IMEDIATAMENTE antes de chamar a próxima caixa, senão o valor é sobrescrito.
-
             const char *resRadius = tinyfd_inputBox("Nova Esfera", "Raio:", "1.0");
             if (!resRadius) return;
-            std::string strRadius = resRadius; // Copia segura
+            std::string strRadius = resRadius;
 
             const char *resX = tinyfd_inputBox("Nova Esfera", "Centro X:", "0.0");
             if (!resX) return;
-            std::string strX = resX; // Copia segura
+            std::string strX = resX;
 
             const char *resY = tinyfd_inputBox("Nova Esfera", "Centro Y:", "0.0");
             if (!resY) return;
-            std::string strY = resY; // Copia segura
+            std::string strY = resY;
 
             const char *resZ = tinyfd_inputBox("Nova Esfera", "Centro Z:", "0.0");
             if (!resZ) return;
-            std::string strZ = resZ; // Copia segura
+            std::string strZ = resZ;
 
             float r, cx, cy, cz;
 
-            // Parse usando as strings seguras (.c_str())
             if (sscanf(strRadius.c_str(), "%f", &r) == 1 &&
                 sscanf(strX.c_str(), "%f", &cx) == 1 &&
                 sscanf(strY.c_str(), "%f", &cy) == 1 &&
@@ -581,14 +560,14 @@ namespace controls {
                 // E. Substituição
                 delete g_object;
 
-                // Cria novo objeto (Flag 1 para NÃO normalizar)
+                // Cria novo objeto
                 g_object = new object::Object(
                     {0.0f, 0.0f, 0.0f},
                     newVertices,
                     newFaces,
                     newCells,
                     "scene_edited.obj",
-                    1, // <--- Mantendo o fix de escala
+                    1,
                     true
                 );
 
@@ -620,60 +599,64 @@ namespace controls {
     //---------------------------
     void mouseCallback(int button, int state, int x, int y) {
         if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
-            // Lógica de Duplo Clique
+
+            // 1. Obter dados comuns (Tempo e Viewport)
             int currentTime = glutGet(GLUT_ELAPSED_TIME);
             int threshold = 300; // milissegundos
             int viewport[4];
             getViewport(viewport);
 
-            // Se for duplo clique, entra no modo de edição de coordenadas do vértice
+            // ---------------------------------------------------------
+            // 2. Lógica de Duplo Clique (Edição de Vértice)
+            // ---------------------------------------------------------
             if (!g_face_only_mode && (currentTime - lastLeftClickTime < threshold)) {
                 int vertexIndex = g_object->pickVertex(x, y, viewport);
                 if (vertexIndex >= 0) {
                     std::cout << "Duplo clique no vértice " << vertexIndex << std::endl;
                     g_object->editVertexCoordinates(vertexIndex);
-                    g_object->setVertexColor(vertexIndex, {0.0f, 1.0f, 0.0f}); // Verde
+                    g_object->setVertexColor(vertexIndex, {0.0f, 1.0f, 0.0f});
                     glutPostRedisplay();
                     lastLeftClickTime = currentTime;
                     return;
                 }
             }
-
             lastLeftClickTime = currentTime;
 
-            // Lógica de Seleção Múltipla (Shift)
+            // ---------------------------------------------------------
+            // 3. Lógica de Seleção Simples (Picking)
+            // ---------------------------------------------------------
             int modifiers = glutGetModifiers();
             bool multiSelect = (modifiers & GLUT_ACTIVE_SHIFT) != 0;
-            if (!multiSelect)
-                g_object->clearSelection(); // Limpa seleção anterior se não segurar Shift
 
-            // Tenta selecionar Vértice
+            // Variáveis para armazenar o que foi clicado
+            int clickedVertex = -1;
+            int clickedFace = -1;
             if (!g_face_only_mode) {
-                int newVertex = g_object->pickVertex(x, y, viewport);
-                if (newVertex >= 0) {
-                    g_object->getSelectedVertices().push_back(newVertex);
-                    g_object->setVertexColor(newVertex, {1.0f, 0.0f, 0.0f}); // Vermelho
-                    std::cout << "Vértice " << newVertex << " selecionado." << std::endl;
-                    glutPostRedisplay();
-                    return; // Prioriza vértice sobre face
-                }
+                clickedVertex = g_object->pickVertex(x, y, viewport);
+            }
+            if (clickedVertex == -1 && !g_vertex_only_mode) {
+                clickedFace = g_object->pickFace(x, y, viewport);
+            }
+            if (!multiSelect) {
+                g_object->clearSelection();
             }
 
-            // Tenta selecionar Face
-            if (!g_vertex_only_mode) {
-                int newFace = g_object->pickFace(x, y, viewport);
-                if (newFace >= 0) {
-                    g_object->getSelectedFaces().push_back(newFace);
-                    g_object->setFaceColor(newFace, {1.0f, 0.0f, 0.0f}); // Vermelho
-                    std::cout << "Face " << newFace << " selecionada." << std::endl;
-                    glutPostRedisplay();
-                    return;
+            // C. Aplica a nova seleção (se houver)
+            if (clickedVertex != -1) {
+                g_object->getSelectedVertices().push_back(clickedVertex);
+                g_object->setVertexColor(clickedVertex, {1.0f, 0.0f, 0.0f});
+                std::cout << "Vértice " << clickedVertex << " selecionado." << std::endl;
+            }
+            else if (clickedFace != -1) {
+                g_object->getSelectedFaces().push_back(clickedFace);
+                g_object->setFaceColor(clickedFace, {1.0f, 0.0f, 0.0f});
+                std::cout << "Face " << clickedFace << " selecionada." << std::endl;
+            }
+            else {
+                if (!multiSelect) {
+                     std::cout << "Nenhum elemento selecionado." << std::endl;
                 }
             }
-
-            // Se clicou no vazio
-            std::cout << "Nenhum elemento selecionado." << std::endl;
-            g_object->clearSelection();
             glutPostRedisplay();
         }
     }

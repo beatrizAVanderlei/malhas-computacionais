@@ -56,7 +56,6 @@ namespace object {
      * * Algoritmo (Triangle Fan):
      * Para um polígono com vértices v0, v1, v2, v3...
      * Cria triângulos: (v0, v1, v2), (v0, v2, v3), etc.
-     * Complexidade: O(Vértices Totais)
      */
     std::vector<std::array<unsigned int, 3> > Object::triangulateFaces(
         const std::vector<std::vector<unsigned int> > &faces) const {
@@ -69,7 +68,7 @@ namespace object {
 
             if (n < 3) continue; // Ignora linhas ou pontos degenerados
 
-                // Caso simples (Triângulo): Copia direto
+            // Caso simples (Triângulo): Copia direto
             else if (n == 3) {
                 triangles.push_back({face[0], face[1], face[2]});
                 // Mapeia o triângulo gerado de volta para a face original (útil para picking)
@@ -107,7 +106,7 @@ namespace object {
 
         if (!data) {
             std::cerr << "Falha ao carregar textura: " << filepath << std::endl;
-            return 0; // ID 0 indica falha
+            return 0;
         }
 
         // Gera um identificador único para a textura na GPU
@@ -131,7 +130,7 @@ namespace object {
         // Upload dos dados para a VRAM
         glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
 
-        // [IMPORTANTE] Salva uma cópia dos pixels na RAM (CPU) para o Path Tracer.
+        // Salva uma cópia dos pixels na RAM (CPU) para o Path Tracer.
         // O Ray Tracing roda na CPU e não consegue ler a memória da GPU diretamente.
         RawTextureData raw;
         raw.width = width;
@@ -142,13 +141,13 @@ namespace object {
         for (int i = 0; i < numPixels; ++i) {
             int srcIdx = i * nrChannels;
             // Descarta o canal Alpha se existir, converte para RGB puro para o Path Tracer
-            raw.pixels.push_back(data[srcIdx]); // R
-            raw.pixels.push_back(data[srcIdx + 1]); // G
-            raw.pixels.push_back(data[srcIdx + 2]); // B
+            raw.pixels.push_back(data[srcIdx]);
+            raw.pixels.push_back(data[srcIdx + 1]);
+            raw.pixels.push_back(data[srcIdx + 2]);
         }
 
-        texture_cache_cpu_[textureID] = raw; // Guarda no cache da classe Object
-        stbi_image_free(data); // Libera a memória temporária do STB
+        texture_cache_cpu_[textureID] = raw;
+        stbi_image_free(data);
 
         return textureID;
     }
@@ -157,7 +156,6 @@ namespace object {
     // 3. FUNÇÕES DE DESENHO (DRAW CALLS)
     // ============================================================
 
-    // Função "Master" de desenho. Orquestra a renderização das camadas.
     void Object::draw(const ColorsMap &colors, bool vertexOnlyMode, bool faceOnlyMode) {
         glPushMatrix(); // Salva a matriz atual da câmera
 
@@ -183,7 +181,7 @@ namespace object {
             drawVerticesVBO(vertexColor);
         }
 
-        glPopMatrix(); // Restaura a matriz da câmera
+        glPopMatrix();
     }
 
     // Desenha a geometria sólida usando triângulos
@@ -200,7 +198,7 @@ namespace object {
             if (it != faceTriangleMap.end())
                 origFace = it->second;
 
-            // Lógica de Cor: Usa cor específica da face (ex: seleção) ou padrão
+            // Lógica de Cor: Usa cor específica da face ou padrão
             Color col = defaultColor;
             if (origFace < static_cast<int>(faceColors.size()))
                 col = faceColors[origFace];
@@ -219,26 +217,17 @@ namespace object {
 
     // Desenha texturas projetadas sobre as faces
     void Object::drawTexturedFaces() {
-        if (face_texture_map_.empty()) return; // Sai se não houver texturas
-
-        // Habilita pipeline de texturização e mistura (blending)
+        if (face_texture_map_.empty()) return;
         glEnable(GL_TEXTURE_2D);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-        // [TRUQUE VISUAL] GL_LEQUAL (Less or Equal)
-        // Permite desenhar pixels que estão exatamente na mesma profundidade da face sólida.
-        // Isso evita "Z-Fighting" (piscar) entre a textura e a malha base.
         glDepthFunc(GL_LEQUAL);
-
-        glColor3f(1.0f, 1.0f, 1.0f); // Cor branca = textura original sem tintura
+        glColor3f(1.0f, 1.0f, 1.0f);
 
         for (auto const &[faceIdx, texID]: face_texture_map_) {
             if (faceIdx < 0 || faceIdx >= static_cast<int>(faces_.size())) continue;
 
-            // [LÓGICA DE PRIORIDADE DE SELEÇÃO]
             // Se a face está selecionada, NÃO desenhamos a textura.
-            // Queremos ver o "Vermelho" da face base (drawFacesVBO) para indicar seleção.
             bool isSelected = false;
             for (int s: selectedFaces) {
                 if (s == faceIdx) {
@@ -246,7 +235,7 @@ namespace object {
                     break;
                 }
             }
-            if (isSelected) continue; // Pula essa face
+            if (isSelected) continue;
 
             const auto &face = faces_[faceIdx];
             // Verifica se existem coordenadas UV geradas para esta face
@@ -265,45 +254,33 @@ namespace object {
             }
             glEnd();
         }
-
-        // Limpeza de estado
         glDisable(GL_TEXTURE_2D);
         glDisable(GL_BLEND);
-        glDepthFunc(GL_LESS); // Retorna teste de profundidade ao padrão (Less)
+        glDepthFunc(GL_LESS);
     }
 
     // Desenha o esqueleto da malha (Wireframe)
     // Usa VBOs (Vertex Buffer Objects) para máxima performance.
     void Object::drawEdgesVBO(const Color &color) {
-        glColor3f(color[0], color[1], color[2]); // Cor da linha (Preto)
-        glLineWidth(2.0f); // Espessura
-
-        // Ativa array de vértices na GPU
+        glColor3f(color[0], color[1], color[2]);
+        glLineWidth(2.0f);
         glEnableClientState(GL_VERTEX_ARRAY);
         glBindBuffer(GL_ARRAY_BUFFER, vbo_vertices_);
-        glVertexPointer(3, GL_FLOAT, 0, nullptr); // Aponta para os dados (3 floats por vértice)
-
-        // Desenha linhas usando índices (IBO de arestas)
+        glVertexPointer(3, GL_FLOAT, 0, nullptr);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_edges_);
         glDrawElements(GL_LINES, static_cast<GLsizei>(edge_index_array_.size()), GL_UNSIGNED_INT, nullptr);
-
-        // Desvincula buffers
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
         glDisableClientState(GL_VERTEX_ARRAY);
     }
 
     // Desenha os vértices como pontos
-    // Implementa lógica de "Dupla Passada" para destacar seleção
     void Object::drawVerticesVBO(const Color &defaultColor) {
-        float tamanhoNormal = 5.0f;
-        float tamanhoGrande = 5.0f; // Tamanho igual por decisão de design (pode ser alterado)
-
-        // Cria Set para busca O(1) rápida de vértices selecionados
+        float vertex_size = 5.0f;
         std::unordered_set<int> selectedSet(selectedVertices.begin(), selectedVertices.end());
 
         // --- PASSADA 1: Vértices NÃO Selecionados (Fundo) ---
-        glPointSize(tamanhoNormal); // Define tamanho global para este lote
+        glPointSize(vertex_size); // Define tamanho global para este lote
         glBegin(GL_POINTS);
         for (size_t i = 0; i < vertices_.size(); ++i) {
             // Se for selecionado, pula (será desenhado na Passada 2)
@@ -324,7 +301,7 @@ namespace object {
             // mesmo que estejam geometricamente atrás de uma face ou linha.
             glDisable(GL_DEPTH_TEST);
 
-            glPointSize(tamanhoGrande);
+            glPointSize(vertex_size);
             glBegin(GL_POINTS);
             for (int idx: selectedVertices) {
                 if (idx >= 0 && idx < static_cast<int>(vertices_.size())) {
@@ -345,10 +322,6 @@ namespace object {
     // 4. CONFIGURAÇÃO DE BUFFERS (VBO/IBO)
     // ============================================================
 
-    /*
-     * Prepara e envia os dados da malha da RAM (CPU) para a VRAM (GPU).
-     * Deve ser chamado sempre que a geometria muda (adição/remoção de vértices).
-     */
     void Object::setupVBOs() {
         // 1. Flattening: Converte estruturas complexas (vector<vec3>) em arrays planos (vector<float>)
         vertex_array_.clear();
@@ -383,26 +356,18 @@ namespace object {
             glGenBuffers(1, &ibo_edges_);
 
         // 5. Upload dos dados
-        // GL_ARRAY_BUFFER: Dados de vértices
         glBindBuffer(GL_ARRAY_BUFFER, vbo_vertices_);
         glBufferData(GL_ARRAY_BUFFER, vertex_array_.size() * sizeof(float), vertex_array_.data(), GL_STATIC_DRAW);
-
-        // GL_ELEMENT_ARRAY_BUFFER: Índices (Faces)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_faces_);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, face_index_array_.size() * sizeof(unsigned int), face_index_array_.data(),
                      GL_STATIC_DRAW);
-
-        // GL_ELEMENT_ARRAY_BUFFER: Índices (Arestas)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_edges_);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, edge_index_array_.size() * sizeof(unsigned int), edge_index_array_.data(),
                      GL_STATIC_DRAW);
-
-        // Desvincula para evitar modificações acidentais
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
     }
 
-    // Wrapper público para atualizar a geometria
     void Object::updateVBOs() {
         setupVBOs();
     }

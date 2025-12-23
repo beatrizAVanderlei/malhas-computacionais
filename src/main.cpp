@@ -49,7 +49,6 @@
 // ---------------------------------------------------------
 
 // Ponteiro para a cena otimizada (BVH) usada pelo Path Tracer.
-// É separada da malha de edição (g_object) para garantir acesso thread-safe e rápido.
 SceneData *g_renderMesh = nullptr;
 
 bool g_pathTracingMode = false; // Flag de Estado: Alterna entre OpenGL e Path Tracing
@@ -67,7 +66,6 @@ int g_winWidth = 800;
 int g_winHeight = 600;
 
 // Armazenamento intermediário da geometria crua.
-// Necessário porque g_object encapsula os dados, e o Path Tracer precisa de acesso direto (raw access).
 std::vector<Vec3> g_ptVertices;
 std::vector<std::vector<unsigned int> > g_ptFaces;
 
@@ -92,18 +90,15 @@ void initPathTracingTexture(int w, int h) {
     g_winHeight = h;
 
     // Redimensiona os buffers da CPU para coincidir com a resolução da janela.
-    // Limpa com preto (0,0,0) para iniciar uma nova renderização.
     g_accumBuffer.resize(w * h, Vec3(0, 0, 0));
-    g_pixelBuffer.resize(w * h * 3, 0); // 3 canais (R, G, B)
-    g_ptSamples = 0; // Reseta o contador de convergência
+    g_pixelBuffer.resize(w * h * 3, 0);
+    g_ptSamples = 0;
 
     // Configura a textura na GPU (OpenGL)
-    if (g_ptTexture == 0) glGenTextures(1, &g_ptTexture); // Gera ID apenas se não existir
+    if (g_ptTexture == 0) glGenTextures(1, &g_ptTexture);
     glBindTexture(GL_TEXTURE_2D, g_ptTexture);
 
     // Configura filtros de amostragem.
-    // GL_NEAREST é usado aqui para vermos cada pixel do Ray Tracer com nitidez ("pixel perfect"),
-    // útil para depurar ruído e convergência. GL_LINEAR borraria o resultado.
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
@@ -114,8 +109,6 @@ void initPathTracingTexture(int w, int h) {
 // ---------------------------------------------------------
 // ATUALIZAÇÃO DO FRAME (PATH TRACING LOOP)
 // ---------------------------------------------------------
-// Esta função é chamada a cada frame quando o modo 'P' está ativo.
-// Ela dispara raios, acumula luz e atualiza a textura.
 void updatePathTracingFrame() {
     if (!g_renderMesh) return;
 
@@ -132,7 +125,7 @@ void updatePathTracingFrame() {
     if (last_rot_x != g_rotation_x || last_rot_y != g_rotation_y ||
         last_zoom != g_zoom || last_off_x != g_offset_x || last_off_y != g_offset_y) {
         isMoving = true;
-        g_ptSamples = 0; // Reinicia o acumulador
+        g_ptSamples = 0;
         std::fill(g_accumBuffer.begin(), g_accumBuffer.end(), Vec3(0, 0, 0));
 
         last_rot_x = g_rotation_x;
@@ -234,10 +227,9 @@ void updatePathTracingFrame() {
 // ---------------------------------------------------------
 // CALLBACK DE DESENHO (DISPLAY)
 // ---------------------------------------------------------
-// Função chamada pelo GLUT sempre que a janela precisa ser redesenhada (geralmente 60 FPS).
 void displayCallback() {
     // Limpa o fundo e o buffer de profundidade (Z-Buffer)
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f); // Fundo Branco
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // Verifica qual modo de renderização está ativo
@@ -250,7 +242,6 @@ void displayCallback() {
         updatePathTracingFrame();
 
         // 2. Prepara OpenGL para desenhar em 2D (Overlay)
-        // Salva e reseta as matrizes para garantir coordenadas ortogonais
         glMatrixMode(GL_PROJECTION);
         glPushMatrix();
         glLoadIdentity();
@@ -258,7 +249,7 @@ void displayCallback() {
         glPushMatrix();
         glLoadIdentity();
 
-        // Desabilita teste de profundidade (queremos desenhar por cima de tudo)
+        // Desabilita teste de profundidade
         glDisable(GL_DEPTH_TEST);
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, g_ptTexture);
@@ -286,9 +277,7 @@ void displayCallback() {
         glPopMatrix(); // Restaura Projection
         glMatrixMode(GL_MODELVIEW);
 
-        glutSwapBuffers(); // Troca os buffers (Double Buffering)
-
-        // Solicita redesenho imediato para continuar o loop de refinamento da imagem
+        glutSwapBuffers();
         glutPostRedisplay();
     } else {
         // ====================================================
@@ -303,36 +292,28 @@ void displayCallback() {
 
         // Definição de cores básicas para o renderizador
         render::ColorsMap colors;
-        colors["surface"] = {0.8f, 0.8f, 0.8f}; // Cor padrão das faces
-        colors["edge"] = {0.0f, 0.0f, 0.0f}; // Cor das arestas
-        colors["vertex"] = {0.0f, 0.0f, 0.0f}; // Cor dos vértices
+        colors["surface"] = {0.8f, 0.8f, 0.8f};
+        colors["edge"] = {0.0f, 0.0f, 0.0f};
+        colors["vertex"] = {0.0f, 0.0f, 0.0f};
 
         if (g_object) {
-            // Desenha a geometria base (Vertices, Arestas, Faces sólidas)
             g_object->draw(colors, g_vertex_only_mode, g_face_only_mode);
-
-            // Desenha a camada de texturas por cima da malha
-            // [IMPORTANTE] Só desenha se NÃO estiver no modo "Apenas Vértices"
-            // para respeitar a visualização de nuvem de pontos.
             if (!g_vertex_only_mode) {
                 g_object->drawTexturedFaces();
             }
         }
         glPopMatrix();
-
         glutSwapBuffers();
     }
 }
 
 // Callback chamado quando a janela é redimensionada
 void reshapeCallback(int width, int height) {
-    // Atualiza o Viewport e a Matriz de Projeção
     render::setup_opengl(width, height);
 }
 
 // Callback chamado quando o sistema está ocioso (Idle)
 void idleCallback() {
-    // Processa input contínuo (ex: segurar tecla para girar)
     controls::updateRotation(g_rotation_x, g_rotation_y);
     controls::updateNavigation(g_offset_x, g_offset_y);
     glutPostRedisplay();
@@ -344,11 +325,11 @@ void idleCallback() {
 void runGraphicalApp(int argc, char **argv) {
     // 1. Inicialização do GLUT (Janela e Contexto)
     glutInit(&argc, argv);
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH); // Buffer Duplo, RGB e Z-Buffer
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
     int winWidth = 800, winHeight = 600;
     glutInitWindowSize(winWidth, winHeight);
     glutCreateWindow("Visualizador de Malha - OpenGL");
-    glutSetKeyRepeat(GLUT_KEY_REPEAT_ON); // Permite repetição de tecla (segurar)
+    glutSetKeyRepeat(GLUT_KEY_REPEAT_ON);
 
     // Inicialização do GLEW (Apenas Windows/Linux)
 #ifndef __APPLE__
@@ -363,12 +344,12 @@ void runGraphicalApp(int argc, char **argv) {
     render::setup_opengl(winWidth, winHeight);
 
     // 2. Carregamento do Arquivo 3D
-    int detection_size = 5; // Tolerância para clique do mouse (picking)
+    int detection_size = 5;
     std::string filename = "../assets/cornell_box.obj";
 
     fileio::MeshData mesh;
     try {
-        mesh = fileio::read_file(filename); // Parse do arquivo
+        mesh = fileio::read_file(filename);
     } catch (const std::exception &e) {
         std::cerr << "Erro ao carregar o arquivo: " << e.what() << std::endl;
         exit(EXIT_FAILURE);
@@ -384,9 +365,8 @@ void runGraphicalApp(int argc, char **argv) {
         });
     }
 
-    // 3. Normalização e Escala (Passo Crítico)
-    // Calcula o Bounding Box (Caixa envolvente) para centralizar e escalar o objeto.
-    // Isso é vital para garantir que a câmera e o Path Tracer funcionem com valores numéricos estáveis.
+    // 3. Normalização e Escala
+    // Calcula o Bounding Box para centralizar e escalar o objeto.
     float minX = vertices[0][0], maxX = vertices[0][0];
     float minY = vertices[0][1], maxY = vertices[0][1];
     float minZ = vertices[0][2], maxZ = vertices[0][2];
@@ -407,8 +387,6 @@ void runGraphicalApp(int argc, char **argv) {
     float height = maxY - minY;
     float depth = maxZ - minZ;
     float maxDimension = std::max(std::max(width, height), depth);
-
-    // Escala para caber em um cubo de tamanho 2.0
     float scaleFactor = 2.0f / (maxDimension > 0 ? maxDimension : 1.0f);
 
     // Aplica a transformação diretamente nos vértices (Baking)
@@ -437,7 +415,7 @@ void runGraphicalApp(int argc, char **argv) {
             face_cells.push_back(static_cast<unsigned int>(id));
         }
     } else {
-        // Se não houver grupos, preenche com valor sentinela (Max UINT)
+        // Se não houver grupos, preenche com valor sentinela
         face_cells.resize(faces.size(), 0xFFFFFFFF);
     }
 
@@ -449,10 +427,10 @@ void runGraphicalApp(int argc, char **argv) {
     }
     g_ptFaces = faces;
 
-    // 5. Instanciação do Objeto "Deus" (God Object)
+    // 5. Instanciação do Objeto
     std::array<float, 3> position = {0.0f, 0.0f, 0.0f};
     g_object = new object::Object(position, vertices, faces, face_cells, filename, detection_size, true);
-    g_object->clearColors(); // Reseta para cor padrão (Cinza Claro)
+    g_object->clearColors();
 
     // Registra Callbacks
     glutDisplayFunc(displayCallback);
@@ -517,21 +495,15 @@ void runPathTracingMode() {
     float depth = maxZ - minZ;
     float maxDimension = std::max(std::max(width, height), depth);
 
-    // ==============================================================
-    // [AQUI ESTÃO AS MODIFICAÇÕES SOLICITADAS]
-    // ==============================================================
-
-    // Calcula a escala (com proteção contra divisão por zero)
-    // O objetivo é deixar o objeto com tamanho aproximado de 2.0 unidades
+    // Calcula a escala
     float scale = 2.0f / (maxDimension > 0 ? maxDimension : 1.0f);
 
-    // Aplica Centralização E Escala diretamente nos vértices
+    // Aplica Centralização e Escala diretamente nos vértices
     for (auto &v: vertices) {
         v[0] = (v[0] - centerX) * scale;
         v[1] = (v[1] - centerY) * scale;
         v[2] = (v[2] - centerZ) * scale;
     }
-    // ==============================================================
 
     // 5. Prepara as faces
     std::vector<std::vector<unsigned int> > faces;
@@ -542,7 +514,6 @@ void runPathTracingMode() {
     }
 
     // 6. Renderiza
-    // O nome do arquivo de saída pode ser alterado aqui
     renderPathTracing(vertices, faces, "render_output2_plant.ppm");
 }
 

@@ -42,14 +42,11 @@ namespace object {
     void Object::setFaceColor(int faceIndex, const Color &color) {
         if (faceIndex < 0) return;
 
-        // Segurança: Garante que o vetor de cores tenha o tamanho correto
-        // (útil se faces foram adicionadas recentemente)
         if (faceColors.size() != faces_.size())
-            faceColors.resize(faces_.size(), Color{0.8f, 0.8f, 0.8f}); // Cor padrão (Clay)
+            faceColors.resize(faces_.size(), Color{0.8f, 0.8f, 0.8f});
 
         if (faceIndex >= 0 && faceIndex < static_cast<int>(faceColors.size())) {
             faceColors[faceIndex] = color;
-            // Atualiza VBOs imediatamente para feedback visual instantâneo
             updateVBOs();
         }
     }
@@ -67,19 +64,24 @@ namespace object {
 
     // Limpa todas as seleções e restaura as cores originais
     void Object::clearSelection() {
+        for(int vIdx : selectedVertices) {
+            setVertexColor(vIdx, {0.0f, 0.0f, 0.0f});
+        }
+        selectedVertices.clear();
+
         selectedFaces.clear();
-        // Restaura cores, mas respeita quem é vidro
+        // Verificação de material
         for (int i = 0; i < faceColors.size(); ++i) {
             if (transparent_faces_.count(i)) {
-                faceColors[i] = {0.6f, 0.8f, 1.0f}; // Mantém azul
+                faceColors[i] = {0.6f, 0.8f, 1.0f}; // Vidro
             } else {
-                faceColors[i] = {0.8f, 0.8f, 0.8f}; // Restaura cinza
+                faceColors[i] = {0.8f, 0.8f, 0.8f}; // Sólido
             }
         }
         updateVBOs();
     }
 
-    // Reseta todas as cores da malha (Hard Reset)
+    // Reseta todas as cores da malha
     void Object::clearColors() {
         std::fill(vertexColors.begin(), vertexColors.end(), Color{0.0f, 0.0f, 0.0f});
         Color faceDefault = {0.8f, 0.8f, 0.8f};
@@ -103,7 +105,7 @@ namespace object {
             return;
         }
 
-        // Carrega a textura na GPU (função em ObjectRendering.cpp)
+        // Carrega a textura na GPU
         GLuint texID = loadTexture(filepath);
         if (texID == 0) return;
 
@@ -137,7 +139,7 @@ namespace object {
         int projectionPlane = 0;
         if (dx <= dy && dx <= dz) projectionPlane = 0; // YZ
         else if (dy <= dx && dy <= dz) projectionPlane = 1; // XZ
-        else projectionPlane = 2; // XY (Frente)
+        else projectionPlane = 2; // XY
 
         // Evita divisão por zero se a seleção for 2D ou 1D
         if (dx < 1e-4) dx = 1.0f;
@@ -163,7 +165,7 @@ namespace object {
                     // XZ (Chão)
                     u = (v[0] - minX) / dx; // X -> U
                     coord_v = (v[2] - minZ) / dz; // Z -> V
-                    coord_v = 1.0f - coord_v; // Inverte V (imagens geralmente começam no topo)
+                    coord_v = 1.0f - coord_v; // Inverte V
                 } else {
                     // XY
                     u = (v[0] - minX) / dx; // X -> U
@@ -182,11 +184,10 @@ namespace object {
             // 1. Remove associação com ID de textura OpenGL
             face_texture_map_.erase(faceIdx);
 
-            // 2. Limpa coordenadas UV (opcional, mas bom para economizar memória)
+            // 2. Limpa coordenadas UV
             face_uv_map_.erase(faceIdx);
 
             // 3. Remove da lista de transparência (Path Tracing)
-            // (Se você implementou a lógica de vidro anterior)
             transparent_faces_.erase(faceIdx);
 
             // 4. Restaura a cor visual para Cinza Padrão
@@ -203,7 +204,6 @@ namespace object {
             if (enable) {
                 transparent_faces_.insert(faceIdx);
 
-                // Visual Feedback no Editor OpenGL:
                 // Pinta de "Ciano Azulado" para indicar vidro/água
                 if (faceIdx < faceColors.size()) {
                     faceColors[faceIdx] = {0.6f, 0.8f, 1.0f};
@@ -216,8 +216,6 @@ namespace object {
                 }
             }
         }
-
-        // Atualiza a GPU com as novas cores
         updateVBOs();
     }
 
@@ -249,7 +247,6 @@ namespace object {
             const auto &face = faces_[faceIndex];
             for (unsigned int adjVertex: face) {
                 if (adjVertex != static_cast<unsigned int>(vertexIndex)) {
-                    // Evita duplicatas na seleção
                     if (std::find(selectedVertices.begin(), selectedVertices.end(), adjVertex) == selectedVertices.
                         end()) {
                         selectedVertices.push_back(adjVertex);
@@ -309,7 +306,6 @@ namespace object {
 
     // Cria uma face conectando vértices selecionados (Preenchimento de buracos)
     void Object::createFaceFromSelectedVertices() {
-        // Validação: Só aceita triângulos ou quads
         if (selectedVertices.size() < 3 || selectedVertices.size() > 4) {
             std::cout << "Selecione 3 ou 4 vértices." << std::endl;
             return;
@@ -349,11 +345,9 @@ namespace object {
     }
 
     void Object::createVertexAndLinkToSelected() {
-        // (Similar ao createVertexFromDialog, mas conecta o novo ponto aos selecionados)
+        // Conecta o novo ponto aos vértices selecionados
         const char *inputX = tinyfd_inputBox("Novo Vértice", "X:", "");
         if (!inputX) return;
-        // ... (código de input omitido por brevidade) ...
-        // Supondo x, y, z válidos:
         float x = 0, y = 0, z = 0;
         vertices_.push_back({x, y, z});
         vertexColors.push_back({0, 0, 0});
@@ -383,7 +377,6 @@ namespace object {
         const char *inputX = tinyfd_inputBox("Editar X", "X:", defX);
         if (!inputX) return;
 
-        // ... Lógica de parsing ...
         float val;
         if (sscanf(inputX, "%f", &val) == 1) vertices_[vertexIndex][0] = val;
 
@@ -394,11 +387,7 @@ namespace object {
     // 5. REMOÇÃO DE ELEMENTOS (DELETE)
     // ============================================================
 
-    /*
-     * Remove faces ou vértices selecionados e RECONSTRÓI a malha.
-     * Complexidade: Requer remapeamento de todos os índices, pois remover um item do meio
-     * de um std::vector desloca todos os itens subsequentes.
-     */
+    //Remove faces ou vértices selecionados e reconstrói a malha.
     void Object::deleteSelectedElements() {
         // --- 1. Deletar Faces ---
         if (!selectedFaces.empty()) {
@@ -411,7 +400,6 @@ namespace object {
             std::map<int, std::vector<Vec2> > newUV;
 
             int newIdx = 0;
-            // Copia apenas o que NÃO foi deletado
             for (int i = 0; i < (int) faces_.size(); ++i) {
                 if (toDelete.find(i) == toDelete.end()) {
                     newFaces.push_back(faces_[i]);
@@ -458,15 +446,13 @@ namespace object {
                 for (auto &idx: f) {
                     // Se o vértice foi deletado (map == -1), a face quebra
                     if (mapOldToNew[idx] == -1) broken = true;
-                    else idx = mapOldToNew[idx]; // Atualiza para o novo índice
+                    else idx = mapOldToNew[idx];
                 }
                 if (!broken) validFaces.push_back(f);
             }
             faces_ = validFaces;
             selectedVertices.clear();
         }
-
-        // Recalcula tudo e envia para GPU
         edges_ = calculateEdges(faces_);
         updateConnectivity();
         setupVBOs();

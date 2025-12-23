@@ -34,10 +34,9 @@
 #endif
 
 // ============================================================
-// VARIÁVEIS GLOBAIS DE CÂMERA (Estado Compartilhado)
+// VARIÁVEIS GLOBAIS DE CÂMERA
 // ============================================================
-// Essas variáveis definem a posição e orientação da câmera.
-// Elas devem estar sincronizadas com o loop de renderização principal.
+
 extern float g_offset_x;
 extern float g_offset_y;
 extern float g_zoom;
@@ -48,16 +47,14 @@ namespace object {
     // ============================================================
     // 1. HELPER DE TRANSFORMAÇÃO (Matriz ModelView)
     // ============================================================
-    /*
-     * Aplica as transformações geométricas para alinhar o "mundo do picking"
-     * com o "mundo visual". Se isso estiver errado, o clique errará o alvo.
-     */
+
+    // Aplica as transformações geométricas para alinhar o "mundo do picking" com o "mundo visual".
     static void applyPickingTransform(const std::array<float, 3> &pos, float scale) {
         // 1. Transformações da Câmera (Global/View Matrix)
         glTranslatef(g_offset_x, g_offset_y, 0.0f); // Pan
         glScalef(g_zoom, g_zoom, g_zoom); // Zoom
-        glRotatef(g_rotation_x, 1.0f, 0.0f, 0.0f); // Rotação X (Pitch)
-        glRotatef(g_rotation_y, 0.0f, 1.0f, 0.0f); // Rotação Y (Yaw)
+        glRotatef(g_rotation_x, 1.0f, 0.0f, 0.0f); // Rotação X
+        glRotatef(g_rotation_y, 0.0f, 1.0f, 0.0f); // Rotação Y
 
         // 2. Transformações do Objeto (Local/Model Matrix)
         glTranslatef(pos[0], pos[1], pos[2]);
@@ -72,15 +69,10 @@ namespace object {
         // Salva estado atual do OpenGL (cores, luzes, texturas) para restaurar depois.
         // O picking é uma operação "invisível" e não deve afetar a tela.
         glPushAttrib(GL_ALL_ATTRIB_BITS);
-
-        // OTIMIZAÇÃO: Desliga recursos gráficos caros e desnecessários para identificação.
-        // Só precisamos da geometria plana e cor sólida.
-        glDisable(GL_DITHER); // Sem dithering de cor
-        glDisable(GL_LIGHTING); // Sem cálculo de luz (cor pura)
-        glDisable(GL_TEXTURE_2D); // Sem texturas
-        glDisable(GL_BLEND); // Sem transparência
-
-        // Garante preenchimento sólido (se estivesse em wireframe, seria difícil clicar)
+        glDisable(GL_DITHER);
+        glDisable(GL_LIGHTING);
+        glDisable(GL_TEXTURE_2D);
+        glDisable(GL_BLEND);
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
         // Limpa o buffer de cor e profundidade para começar o desenho do ID map
@@ -89,7 +81,7 @@ namespace object {
         glPushMatrix();
         applyPickingTransform(position_, scale_);
 
-        // Obtém a geometria triangulada (OpenGL só rasteriza triângulos)
+        // Obtém a geometria triangulada
         auto tri_faces = triangulateFaces(faces_);
 
         glBegin(GL_TRIANGLES);
@@ -117,12 +109,9 @@ namespace object {
         glFlush(); // Força a GPU a terminar o desenho antes de lermos o pixel
 
         // LEITURA DO PIXEL (GPU -> CPU)
-        // OpenGL tem origem (0,0) no canto inferior esquerdo.
-        // Sistemas de janela (Windows/Mac) têm origem no canto superior esquerdo.
-        // Invertemos Y para corrigir: viewport[3] é a altura da janela.
         int realY = viewport[3] - mouseY;
 
-        unsigned char pixel[3]; // Buffer para 1 pixel RGB
+        unsigned char pixel[3];
         glReadPixels(mouseX, realY, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pixel);
 
         glPopAttrib(); // Restaura o OpenGL para o estado normal de renderização
@@ -132,14 +121,13 @@ namespace object {
         int pickedTriangleIndex = (pixel[0] << 16) | (pixel[1] << 8) | pixel[2];
 
         // Mapeia o triângulo clicado de volta para a Face Original (N-Gono)
-        // (Ex: Um quadrado é feito de 2 triângulos. Clicar em qualquer um deve selecionar o quadrado)
         auto it = faceTriangleMap.find(pickedTriangleIndex);
         if (it != faceTriangleMap.end()) {
             std::cout << "Face original selecionada: " << it->second << std::endl;
-            return it->second; // Retorna ID da face original
+            return it->second;
         }
 
-        return -1; // Clicou no fundo (cor preta 0,0,0 ou branco, mas fora do mapa)
+        return -1;
     }
 
     // ============================================================
@@ -159,7 +147,6 @@ namespace object {
         applyPickingTransform(position_, scale_);
 
         // Aumenta o tamanho do ponto renderizado para facilitar o clique.
-        // Um vértice é infinitamente pequeno, mas desenhamos uma área de 10px clicável.
         glPointSize(10.0f);
 
         glBegin(GL_POINTS);
@@ -192,7 +179,7 @@ namespace object {
 
         // Validação de segurança
         if (pickedIndex >= static_cast<int>(vertices_.size()))
-            return -1; // Índice inválido (provavelmente cor de fundo)
+            return -1;
 
         return pickedIndex;
     }
@@ -201,7 +188,7 @@ namespace object {
     // 4. SELEÇÃO LÓGICA (POR GRUPOS)
     // ============================================================
     /*
-     * Seleciona faces semanticamente conectadas (ex: "Tampa da Chaleira").
+     * Seleciona faces semanticamente conectadas.
      * Baseia-se em IDs de grupo (`face_cells`) carregados do arquivo (tags 'g' ou 'usemtl').
      */
     void Object::selectFacesByGroup(int faceIndex) {
@@ -216,7 +203,7 @@ namespace object {
         for (size_t i = 0; i < face_cells_.size(); ++i) {
             if (face_cells_[i] == targetID) {
                 selectedFaces.push_back(static_cast<int>(i));
-                faceColors[i] = {1.0f, 0.0f, 0.0f}; // Feedback visual imediato (Vermelho)
+                faceColors[i] = {1.0f, 0.0f, 0.0f};
             }
         }
     }

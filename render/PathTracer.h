@@ -232,9 +232,9 @@ struct AABB {
 
 // Nó da árvore BVH.
 struct BVHNode {
-    AABB box; // Caixa que envolve tudo abaixo deste nó
-    BVHNode *left = nullptr, *right = nullptr; // Filhos da esquerda e direita
-    int firstTriIndex = -1, triCount = 0; // Se for folha, aponta para onde começam os triângulos
+    AABB box;
+    BVHNode *left = nullptr, *right = nullptr;
+    int firstTriIndex = -1, triCount = 0;
 };
 
 // Contêiner principal da cena para o Ray Tracer.
@@ -314,18 +314,18 @@ inline BVHNode *buildBVHRecursive(SceneData &scene, int left, int right) {
 inline void buildBVH(SceneData &scene) {
     if (scene.faces.empty()) return;
     scene.triIndices.resize(scene.faces.size());
-    for (size_t i = 0; i < scene.faces.size(); ++i) scene.triIndices[i] = i; // Inicializa índices sequenciais
+    for (size_t i = 0; i < scene.faces.size(); ++i) scene.triIndices[i] = i;
     scene.bvhRoot = buildBVHRecursive(scene, 0, scene.faces.size());
 }
 
 // ==========================================
 // 4. INTERSEÇÃO (Möller–Trumbore)
 // ==========================================
-// Algoritmo rápido para testar interseção Raio vs Triângulo.
+// Algoritmo para verificar interseção Raio vs Triângulo.
 // Retorna a distância 't' e as coordenadas baricêntricas (u, v) para interpolação de textura.
 inline double intersectTriangle(const Ray &r, const Vec3 &v0, const Vec3 &v1, const Vec3 &v2, double &outU,
                                 double &outV) {
-    const double EPS = 1e-6; // Tolerância para erros de ponto flutuante
+    const double EPS = 1e-6;
     Vec3 e1 = v1 - v0;
     Vec3 e2 = v2 - v0; // Arestas do triângulo
     Vec3 h = r.d.cross(e2);
@@ -355,7 +355,7 @@ inline Vec3 getPixel(const TextureData &tex, int x, int y) {
 }
 
 // Amostragem com Interpolação Bilinear.
-// Lê os 4 pixels vizinhos e mistura suavemente para evitar o aspecto "pixelado" (blocky).
+// Lê os 4 pixels vizinhos e mistura suavemente para evitar o aspecto "pixelado".
 inline Vec3 sampleTexture(const TextureData &tex, double u, double v) {
     if (tex.pixels.empty()) return Vec3(1, 0, 1);
 
@@ -393,7 +393,7 @@ inline bool getIntersection(const Ray &r, double &t, int &id, Vec3 &normalHit, i
                             double &hitV) {
     t = 1e20;
     id = 0;
-    bool hit = false; // Inicializa com "nada encontrado"
+    bool hit = false;
     hitFaceIndex = -1;
 
     // 1. Testa Malha (BVH)
@@ -405,11 +405,11 @@ inline bool getIntersection(const Ray &r, double &t, int &id, Vec3 &normalHit, i
         while (stackPtr > 0) {
             const BVHNode *node = stack[--stackPtr];
 
-            // OTIMIZAÇÃO: Se raio não toca a caixa, ignora tudo dentro (Culling)
+            //Se raio não toca a caixa, ignora tudo dentro
             if (!node->box.intersect(r, t)) continue;
 
             if (node->triCount > 0) {
-                // Nó Folha (tem geometria real)
+                // Nó Folha
                 for (int i = 0; i < node->triCount; ++i) {
                     int realIdx = g_renderMesh->triIndices[node->firstTriIndex + i];
                     const auto &face = g_renderMesh->faces[realIdx];
@@ -454,7 +454,7 @@ inline bool getIntersection(const Ray &r, double &t, int &id, Vec3 &normalHit, i
     Vec3 L(0.0, 0.6, 0.0); // Posição da luz
     Vec3 op = L - r.o;
     double b = op.dot(r.d);
-    double det = b * b - op.dot(op) + 0.01; // r^2 = 25
+    double det = b * b - op.dot(op) + 0.01; // r^2
     if (det > 0) {
         double t_luz = b - std::sqrt(det);
         if (t_luz > 1e-4 && t_luz < t) {
@@ -475,13 +475,11 @@ inline Vec3 radiance(Ray r, uint32_t &seed) {
     Vec3 finalColor(0.0, 0.0, 0.0); // Luz total acumulada (aditivo)
 
     // --- CONFIGURAÇÃO DA LUZ DA CENA ---
-    // Você pode parametrizar isso externamente se quiser
     Vec3 lightPos(0.0, 0.6, 0.0);
     double lightRadius = 0.04;
-    Vec3 lightEmission(8.0, 8.0, 8.0); // Intensidade da luz
+    Vec3 lightEmission(8.0, 8.0, 8.0);
 
     // Loop de Rebatimento (Bounces)
-    // Aumentamos para 8 bounces para permitir que a luz atravesse vidros complexos
     for (int depth = 0; depth < 8; ++depth) {
         double t;
         int id;
@@ -498,8 +496,7 @@ inline Vec3 radiance(Ray r, uint32_t &seed) {
         // 2. Se bater na Fonte de Luz (ID 3)
         if (id == 3) {
             // Se for o primeiro raio (visão direta), vemos a luz.
-            // Se for luz indireta (depth > 0), o NEE (Next Event Estimation) já calculou,
-            // então retornamos preto para não duplicar a energia.
+            // Se for luz indireta (depth > 0), o NEE (Next Event Estimation) já calculou, então retornamos preto para não duplicar a energia.
             if (depth == 0) return finalColor + throughput * lightEmission;
             else return finalColor;
         }
@@ -514,6 +511,7 @@ inline Vec3 radiance(Ray r, uint32_t &seed) {
         // ==========================================================
         // CASO 1: MALHA 3D (Objeto carregado)
         // ==========================================================
+
         if (id == 1) {
             // A. Identificação do Material
             int matType = 0; // 0 = Difuso (Padrão)
@@ -525,18 +523,14 @@ inline Vec3 radiance(Ray r, uint32_t &seed) {
             // TIPO 2: VIDRO / DIELÉTRICO (Refração & Reflexão)
             // ------------------------------------------------------
             if (matType == 2) {
-                // Vidro é um material "Especular Perfeito".
-                // O raio bate e toma UM caminho único (reflete OU refrata).
-                // Por isso, não usamos NEE (amostragem de luz) aqui.
 
-                bool into = n.dot(nl) > 0; // O raio está entrando no objeto?
+                bool into = n.dot(nl) > 0; // Verificar se o raio está entrando no objeto
                 double nc = 1.0; // Índice de refração do Ar
                 double nt = 1.5; // Índice de refração do Vidro
                 double nnt = into ? nc / nt : nt / nc;
                 double ddn = r.d.dot(nl);
 
                 // Lei de Snell e Reflexão Interna Total (TIR)
-                // Cos^2(theta_transmission)
                 double cos2t = 1.0 - nnt * nnt * (1.0 - ddn * ddn);
 
                 // Se cos2t < 0, ocorre Reflexão Interna Total (o raio fica preso dentro)
@@ -566,15 +560,13 @@ inline Vec3 radiance(Ray r, uint32_t &seed) {
                     r = Ray(x, tdir);
                     r.o = r.o + r.d * 1e-4;
                 }
-
-                // O throughput não muda muito no vidro ideal (exceto se tiver cor de absorção)
-                // Continuamos o loop sem processar iluminação difusa
                 continue;
             }
 
             // ------------------------------------------------------
             // TIPO 0: DIFUSO (Padrão) - Executa se NÃO for vidro
             // ------------------------------------------------------
+
             f = Vec3(0.7, 0.7, 0.7); // Cor base padrão
 
             // Amostragem de Textura
@@ -590,9 +582,11 @@ inline Vec3 radiance(Ray r, uint32_t &seed) {
                 }
             }
         }
+
         // ==========================================================
         // CASO 2: CHÃO (Procedural)
         // ==========================================================
+
         else {
             // id != 1 && id != 3 (Assumindo id=2 para o chão)
             // Padrão Xadrez
@@ -603,7 +597,6 @@ inline Vec3 radiance(Ray r, uint32_t &seed) {
         // ==========================================================
         // CÁLCULO DE ILUMINAÇÃO DIFUSA (COMPARTILHADO PELA MALHA E CHÃO)
         // ==========================================================
-        // Se chegou aqui, a superfície é difusa (Malha ou Chão).
 
         // --- 1. NEE (Next Event Estimation) / Shadow Rays ---
         // Conecta o ponto diretamente à luz para criar sombras suaves e reduzir ruído.

@@ -92,21 +92,14 @@ namespace object {
 
         // 2. Mapeamento de Identidade (Picking)
         // Cria um mapa "De -> Para" que rastreia os índices originais das faces.
-        // Isso é vital quando deletamos faces: o índice 10 pode virar o 5, mas precisamos saber quem ele era.
         for (size_t i = 0; i < faces_.size(); ++i) {
             originalToCurrentIndex[static_cast<int>(i)] = static_cast<int>(i);
         }
 
         if (detection_size_ != 0) {
-            // MODO TAMANHO REAL: Usa os vértices exatamente como foram criados.
             this->scale_ = 1.0f;
         } else {
-            // MODO FIT-TO-SCREEN (Padrão):
             // Só entra aqui se detection_size for 0. Calcula Bounding Box.
-            // Se o seu código antigo fazia "vertices_[i] = ... / maxDim", ele deve ficar
-            // EXCLUSIVAMENTE dentro deste 'else'.
-
-            // Exemplo de cálculo seguro apenas visual (sem alterar vertices_):
             if (!vertices_.empty()) {
                 float minX = vertices_[0][0], maxX = vertices_[0][0];
                 float minY = vertices_[0][1], maxY = vertices_[0][1];
@@ -126,14 +119,11 @@ namespace object {
 
         // 3. Pré-cálculo de Topologia (Otimização)
         // Calcula estruturas de aceleração para navegação na malha.
-        // Feito apenas uma vez (ou quando a malha muda) para não pesar no render loop.
         edges_ = calculateEdges(faces_); // Extrai linhas para Wireframe
         vertexToFacesMapping = computeVertexToFaces(); // Mapeia Vértice -> Faces Vizinhas
         faceAdjacencyMapping = computeFaceAdjacency(); // Mapeia Face -> Faces Vizinhas
 
         // 4. Upload para GPU
-        // Se o contexto OpenGL estiver ativo, envia os dados para a VRAM.
-        // (A função setupVBOs está implementada em ObjectRendering.cpp)
         if (initGl) {
             setupVBOs();
         }
@@ -151,7 +141,6 @@ namespace object {
     }
 
     // Recalcula as relações de vizinhança.
-    // Deve ser chamada sempre que a geometria é alterada (ex: delete face, subdivide).
     void Object::updateConnectivity() {
         vertexToFacesMapping = computeVertexToFaces();
         faceAdjacencyMapping = computeFaceAdjacency();
@@ -162,12 +151,7 @@ namespace object {
     // CÁLCULOS TOPOLÓGICOS (TEORIA DOS GRAFOS APLICADA)
     // ============================================================
 
-    /*
-     * 1. Mapeamento Vértice -> Faces (Reverse Lookup)
-     * Responde à pergunta: "Quais faces tocam este vértice?"
-     * Útil para: Calcular normais suaves (smooth shading) e selecionar adjacências.
-     * Retorna: Um vetor de vetores, onde o índice i contém a lista de faces do vértice i.
-     */
+    // 1. Mapeamento Vértice -> Faces (Reverse Lookup)
     std::vector<std::vector<int> > Object::computeVertexToFaces() const {
         std::vector<std::vector<int> > mapping(vertices_.size());
 
@@ -182,18 +166,12 @@ namespace object {
         return mapping;
     }
 
-    /*
-     * 2. Grafo de Adjacência de Faces (Dual Graph)
-     * Responde à pergunta: "Quais faces são vizinhas desta face?"
-     * Duas faces são vizinhas se compartilham uma aresta (2 vértices em comum).
-     * Útil para: Algoritmos de seleção por inundação (Flood Fill / BFS).
-     */
+    // 2. Grafo de Adjacência de Faces (Dual Graph)
     std::vector<std::vector<int> > Object::computeFaceAdjacency() const {
         int numFaces = faces_.size();
         std::vector<std::vector<int> > faceAdj(numFaces);
 
         // Passo A: Mapear Arestas -> Lista de Faces que a compartilham.
-        // Aresta é definida por um par {min(v1,v2), max(v1,v2)} para garantir unicidade.
         std::unordered_map<std::pair<unsigned int, unsigned int>, std::vector<int>, PairHash> edgeToFaces;
 
         for (int f = 0; f < numFaces; ++f) {
@@ -202,9 +180,8 @@ namespace object {
             // Itera sobre as arestas do polígono (v[i] -> v[i+1])
             for (int i = 0; i < n; ++i) {
                 unsigned int a = face[i];
-                unsigned int b = face[(i + 1) % n]; // % n fecha o ciclo (último com primeiro)
-                if (a > b) std::swap(a, b); // Ordena para normalizar (a < b)
-
+                unsigned int b = face[(i + 1) % n];
+                if (a > b) std::swap(a, b);
                 edgeToFaces[{a, b}].push_back(f);
             }
         }
@@ -220,11 +197,9 @@ namespace object {
                 unsigned int a = face[i];
                 unsigned int b = face[(i + 1) % n];
                 if (a > b) std::swap(a, b);
-
-                // Olha no mapa quem compartilha essa aresta
                 const auto &faceList = edgeToFaces[{a, b}];
                 for (int other: faceList) {
-                    if (other != f) adjSet.insert(other); // Adiciona vizinho (exceto ele mesmo)
+                    if (other != f) adjSet.insert(other);
                 }
             }
             // Converte Set para Vector (mais rápido para iterar depois)
@@ -233,11 +208,8 @@ namespace object {
         return faceAdj;
     }
 
-    /*
-     * 3. Extração de Arestas Únicas (Wireframe)
-     * Converte a lista de faces (polígonos preenchidos) em uma lista de linhas (esqueleto).
-     * Remove arestas duplicadas (ex: aresta compartilhada entre dois triângulos é desenhada só uma vez).
-     */
+
+    // 3. Extração de Arestas Únicas (Wireframe)
     std::vector<std::pair<unsigned int, unsigned int> > Object::calculateEdges(
         const std::vector<std::vector<unsigned int> > &faces) {
         std::set<std::pair<unsigned int, unsigned int> > edgeSet; // Set ordenado remove duplicatas automaticamente
@@ -246,16 +218,13 @@ namespace object {
             size_t n = face.size();
 
             // Tratamento especial para Quadriláteros (Quads)
-            // Se não tratarmos, o 'else' abaixo desenharia a diagonal se o quad fosse
-            // internamente dividido em triângulos, o que polui o visual wireframe.
-            // Aqui assumimos quads puros (sem diagonal interna).
             if (n == 4) {
                 edgeSet.insert({std::min(face[0], face[1]), std::max(face[0], face[1])});
                 edgeSet.insert({std::min(face[1], face[2]), std::max(face[1], face[2])});
                 edgeSet.insert({std::min(face[2], face[3]), std::max(face[2], face[3])});
-                edgeSet.insert({std::min(face[3], face[0]), std::max(face[3], face[0])}); // Fecha o loop
+                edgeSet.insert({std::min(face[3], face[0]), std::max(face[3], face[0])});
             } else {
-                // Polígonos Genéricos (Triângulos, N-gonos)
+                // Polígonos Genéricos (Triângulos)
                 for (size_t i = 0; i < n; ++i) {
                     unsigned int v1 = face[i];
                     unsigned int v2 = face[(i + 1) % n];

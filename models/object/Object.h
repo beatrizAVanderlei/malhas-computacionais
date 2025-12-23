@@ -87,8 +87,6 @@ namespace object {
         int getSelectedFace() const { return selectedFace; }
 
         const std::vector<std::vector<int>>& getFaceAdjacency() const { return faceAdjacencyMapping; }
-
-        // [CORREÇÃO] Apenas declaração aqui para evitar redefinição
         const std::map<GLuint, RawTextureData>& getTextureCache() const;
         const std::map<int, GLuint>& getFaceTextureMap() const;
         const std::map<int, std::vector<Vec2>>& getFaceUvMap() const;
@@ -132,7 +130,6 @@ namespace object {
 
         mutable std::unordered_map<int, int> faceTriangleMap;
         std::unordered_map<int, int> originalToCurrentIndex;
-        // [CORREÇÃO] Variável que faltava
         std::vector<std::vector<unsigned int>> facesOriginais;
 
         std::vector<int> selectedFaces;
